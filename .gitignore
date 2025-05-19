@@ -1,0 +1,17 @@
+# Ignore compiled and cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+env/
+jarvis-env/
+
+# XTTS files
+output.wav
+tts_cache/
+
+# macOS system files
+.DS_Store
