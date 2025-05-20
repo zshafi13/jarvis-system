@@ -3,6 +3,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from TTS.api import TTS
 import json
 import torch
+import base64
 
 # Load model once at startup
 tts = TTS(model_name="tts_models/multilingual/multi-dataset/xtts_v2")
