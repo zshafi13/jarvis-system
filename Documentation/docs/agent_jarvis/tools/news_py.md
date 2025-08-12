@@ -3,18 +3,19 @@
 ## get_news Method
 
 ### Description
-The `get_news` method is designed to fetch the latest news headline from the Reddit news RSS feed. It attempts to parse the RSS feed and retrieve the title of the most recent news entry. If successful, it returns the headline as a string. If there are no entries or an error occurs during the fetching process, it returns an appropriate message.
+The `get_news` method is designed to fetch the latest news headline from the Reddit news RSS feed. It utilizes the `feedparser` library to parse the RSS feed and retrieve the most recent news entry.
 
 ### Parameters
 This method does not take any parameters.
 
 ### Returns
-- **String**: A message containing the latest news headline if available.
-- **String**: "No news headlines at the moment." if the RSS feed is empty.
-- **String**: "Couldn’t fetch the news." if an exception is raised during the fetching process.
+- **String**: 
+  - If news headlines are available, it returns a formatted string containing the title of the latest news entry: `"Here’s a headline: {title}"`.
+  - If no news headlines are available, it returns the string: `"No news headlines at the moment."`.
 
 ### Exceptions
-- **Exception**: A general exception is caught if any error occurs during the RSS feed parsing, resulting in the return of a specific error message.
+- **Exception**: 
+  - If there is an error during the fetching or parsing of the RSS feed, it returns the string: `"Couldn’t fetch the news."`.
 
 ***
 ###### _Powered by Code Intelligence | DocGen_

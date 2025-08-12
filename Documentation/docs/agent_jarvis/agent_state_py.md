@@ -2,78 +2,78 @@
 ***
 ## AgentState Class
 
-The `AgentState` class is designed to maintain the state of an agent by keeping track of the last intent, parameters, and tool result. This class is useful in scenarios where an agent needs to remember its previous actions or decisions to inform future operations.
+The `AgentState` class is designed to maintain the state of an agent by storing the most recent intent, parameters, and tool result. It provides a mechanism to update these properties and retrieve the current state context, which is useful for tracking the agent's interactions and decisions over time.
 
 ### Properties
 
-- `last_tool_result`: This property stores the result of the last tool or operation that the agent executed. It is used to keep track of the outcomes of the agent's actions.
+- **last_tool_result**: This property stores the result of the last tool or operation executed by the agent. It is used to keep track of the outcome of the agent's most recent action.
 
-- `last_intent`: This property holds the last intent that was processed by the agent. It is essential for understanding what the agent's previous goal or action was.
+- **last_intent**: This property holds the last recognized intent of the agent. It is used to remember what the agent's last intended action or goal was, which can be useful for understanding the agent's behavior and decision-making process.
 
-- `last_parameters`: This property contains the parameters associated with the last intent. It provides context for the intent, detailing any specific data or conditions that were involved in the agent's previous operation.
+- **last_parameters**: This property contains the parameters associated with the last intent. It is used to store any additional data or context needed to execute the intent, providing a detailed understanding of the agent's last action.
 ***
 ## __init__ Method
 
 ### Description
-The `__init__` method is a constructor used to initialize an instance of a class. In this context, it sets up the initial state of the object by defining three attributes: `last_tool_result`, `last_intent`, and `last_parameters`. These attributes are initialized to `None`, indicating that they do not hold any value upon the creation of the object.
+The `__init__` method is a constructor used to initialize an instance of a class. In this context, it sets up initial values for three instance variables: `last_tool_result`, `last_intent`, and `last_parameters`. These variables are initialized to `None`, indicating that they do not hold any data at the time of object creation.
 
 ### Parameters
 This method does not take any parameters.
 
-### Attributes
-- **last_tool_result**: This attribute is intended to store the result of the last tool used. It is initialized to `None`.
-- **last_intent**: This attribute is designed to keep track of the last intent processed. It is initialized to `None`.
-- **last_parameters**: This attribute is meant to hold the parameters associated with the last operation. It is initialized to `None`.
-
 ### Outputs
-The `__init__` method does not return any value.
+This method does not return any values.
 
 ### Exceptions
-This method does not raise any exceptions.
+No exceptions are thrown by this method.
 ***
 ## update Method
 
-The `update` method is designed to store the latest information about an intent, its parameters, and the result of a tool's execution. This method updates the internal state of an object with the provided data.
+The `update` method is designed to store the latest interaction details within an instance. It updates the instance's attributes with the provided intent, parameters, and result.
 
 ### Parameters
 
-- `intent` (str): A string representing the name or type of the intent that is being processed. This could be any identifier that helps in recognizing the purpose or action intended.
+- `intent` (str): Represents the name or type of the intent that was processed. This is a string that identifies the action or purpose of the interaction.
 
-- `parameters` (dict): A dictionary containing key-value pairs that represent the parameters associated with the intent. These parameters provide additional context or data required for processing the intent.
+- `parameters` (dict): A dictionary containing key-value pairs that represent the parameters associated with the intent. These parameters provide additional context or data required to fulfill the intent.
 
-- `result` (str): A string that holds the result of executing a tool or action related to the intent. This result could be any output or outcome that is produced after processing the intent with the given parameters.
+- `result` (str): A string representing the outcome or result of processing the intent. This could be a message, a status, or any relevant information that indicates the result of the interaction.
 
 ### Outputs
 
-This method does not return any value. It updates the internal state of the object by setting the `last_intent`, `last_parameters`, and `last_tool_result` attributes to the provided values.
+This method does not return any value. It updates the instance attributes `last_intent`, `last_parameters`, and `last_tool_result` with the provided values.
 
 ### Exceptions
 
-This method does not explicitly raise any exceptions. However, it assumes that the inputs are of the correct type as specified in the parameters section.
+The `update` method does not explicitly raise any exceptions. However, it assumes that the inputs are correctly formatted and valid.
 ***
 ## get_context Method
 
 ### Description
-The `get_context` method is designed to retrieve the most recent interaction context from an object. It returns a dictionary containing information about the last processed intent, parameters, and tool result.
+The `get_context` method is designed to retrieve the current state of the context within an object. This method returns a dictionary containing information about the last executed intent, parameters associated with that intent, and the result from the last tool used.
+
+### Parameters
+This method does not take any parameters.
 
 ### Returns
 - **dict**: A dictionary with the following keys:
-  - **last_intent**: The last intent that was processed.
-  - **last_parameters**: The parameters associated with the last intent.
-  - **last_tool_result**: The result from the last tool execution.
+  - **"last_intent"**: Represents the last intent that was executed. It is expected to be a string or an object that describes the action or purpose that was last processed.
+  - **"last_parameters"**: Contains the parameters that were used in conjunction with the last intent. This is typically a dictionary or a list of key-value pairs that provide additional information required for the intent.
+  - **"last_tool_result"**: Holds the result from the last tool that was executed. This could be any data type depending on the tool's output, such as a string, number, or complex object.
 
 ### Exceptions
-This method does not explicitly raise any exceptions. However, accessing attributes that do not exist or are not set may result in an `AttributeError`.
+This method does not raise any exceptions.
 ***
 ## Scripted Content Summary
 
 - **AgentState Class**: 
-  - Initializes with attributes `last_tool_result`, `last_intent`, and `last_parameters`, all set to `None`.
-  - Provides an `update` method to set the `last_intent`, `last_parameters`, and `last_tool_result` based on given inputs.
-  - Includes a `get_context` method that returns a dictionary containing the last intent, parameters, and tool result.
-- **Usage**: 
+  - Initializes with attributes `last_tool_result`, `last_intent`, and `last_parameters` set to `None`.
+  - Provides an `update` method to set the `last_intent`, `last_parameters`, and `last_tool_result` attributes.
+  - Offers a `get_context` method to retrieve the current state as a dictionary containing `last_intent`, `last_parameters`, and `last_tool_result`.
+  
+- **Usage**:
   - An instance of `AgentState` can be created using `agent_state = AgentState()`.
-  - The class is designed to maintain and update the state of an agent by tracking the last executed intent, its parameters, and the result of the tool used.
+  - The instance can be updated with new intent, parameters, and tool results using the `update` method.
+  - The current context can be accessed using the `get_context` method.
 
 ***
 ###### _Powered by Code Intelligence | DocGen_

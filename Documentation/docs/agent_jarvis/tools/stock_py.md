@@ -2,28 +2,26 @@
 ***
 ## get_stock Method
 
-The `get_stock` method retrieves the latest stock data for a given symbol using the Yahoo Finance API. It provides information about the stock's closing price, the change in price from the opening, and the percentage change, along with the direction of the change.
+The `get_stock` method retrieves the latest stock data for a given stock symbol using the Yahoo Finance API. It provides information about the stock's closing price, the change in price from the opening to the closing, and the percentage change.
 
 ### Parameters
 
-- `symbol`: *(str, optional)*  
-  The stock symbol for which data is to be fetched. Defaults to `"TSLA"`. The symbol is first converted to lowercase and then mapped to its corresponding value using `symbol_map`. If no mapping is found, it is converted to uppercase.
+- `symbol` (str): The stock symbol for which to retrieve data. Defaults to "TSLA". The symbol is case-insensitive and will be converted to lowercase before processing.
 
 ### Returns
 
-- *(str)*  
-  A formatted string containing the stock symbol in uppercase, the latest closing price, the direction of the price change (up, down, or unchanged), and the percentage change in price.
+- (str): A formatted string containing the stock's symbol, closing price, and the percentage change in price with its direction (up, down, or unchanged). If the stock data cannot be found, it returns a message indicating that the stock data couldn't be found for the given symbol.
 
 ### Exceptions
 
-- If an error occurs during the fetching of stock data, an exception is caught, and a message "Couldn't fetch stock data right now, sir." is returned.
+- If an exception occurs during the process, it prints an error message prefixed with "[Stock error]:" and returns a message indicating that the stock data couldn't be fetched at the moment.
 ***
 ## Scripted Content Summary
 
 - The program contains a dictionary named `symbol_map`.
 - This dictionary maps company names to their respective stock symbols.
-- Companies included in the dictionary are major technology and entertainment firms such as Tesla, Apple, Microsoft, Nvidia, Google, Meta, Amazon, Netflix, Intel, PayPal, AMD, and Qualcomm.
-- Some companies have multiple names mapping to the same stock symbol, such as Google and Alphabet both mapping to "GOOG", and Meta and Facebook both mapping to "META".
+- Multiple names can map to the same stock symbol, such as "google" and "alphabet" both mapping to "GOOG", and "meta" and "facebook" both mapping to "META".
+- The dictionary includes major technology and entertainment companies like Tesla, Apple, Microsoft, Nvidia, Google, Meta, Amazon, Netflix, Intel, PayPal, AMD, and Qualcomm.
 
 ***
 ###### _Powered by Code Intelligence | DocGen_

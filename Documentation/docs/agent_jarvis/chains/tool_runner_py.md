@@ -2,20 +2,27 @@
 ***
 ## Scripted Content Summary
 
-- The script utilizes the `load_dotenv()` function, which suggests it loads environment variables from a `.env` file.
-- A `TavilySearchResults` object is instantiated with a maximum of 3 results, indicating a web search functionality.
-- The script defines a list of tools, each represented by a `Tool` object:
-  - **Get Weather**: 
+- **Environment Setup**: Utilizes `load_dotenv()` to load environment variables from a `.env` file, which is typically used for configuration purposes.
+
+- **Tool Definitions**:
+  - **Get Weather Tool**: 
     - Function: `get_weather(location)`
-    - Description: Fetches weather information for a specified city. Defaults to "Allentown".
+    - Description: Fetches weather information for a specified city. Defaults to "Allentown" if no city is provided.
+    - Usage: Returns the current temperature and weather description.
     - [Documentation](../tools/weather.md)
-  - **Get Stock Price**: 
+  
+  - **Get Stock Price Tool**:
     - Function: `get_stock(symbol)`
-    - Description: Retrieves the stock price for a given ticker symbol. Defaults to "AAPL".
+    - Description: Retrieves the current stock price and percentage change for a given stock ticker symbol. Defaults to "AAPL" if no symbol is provided.
+    - Usage: Provides stock price, direction of change, and percentage change.
     - [Documentation](../tools/stock.md)
-  - **Search Web**: 
-    - Function: Uses `tavily_tool.invoke` to perform a web search.
-    - Description: Executes a web search using Tavily with a provided query string.
+  
+  - **Search Web Tool**:
+    - Function: `tavily_tool.invoke({"query": query})`
+    - Description: Performs a web search using Tavily. Requires a search query string as input.
+    - Usage: Returns search results based on the query.
+
+- **Error Handling**: Each tool includes error handling to manage exceptions and provide user-friendly error messages when data cannot be fetched.
 
 ***
 ###### _Powered by Code Intelligence | DocGen_

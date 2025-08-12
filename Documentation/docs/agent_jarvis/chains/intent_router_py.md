@@ -2,17 +2,21 @@
 ***
 ## Scripted Content Summary
 
-- The script initializes an instance of the `Ollama` class with a model named "llama3.2".
-- A `ChatPromptTemplate` is created for classifying user intents for a voice assistant named Jarvis.
-- The classification prompt defines four possible intents:
-  - **get_weather**: Extracts a "location" for weather information.
-  - **get_stock**: Extracts a "symbol" for stock information.
-  - **search_web**: Extracts a "query" for general or up-to-date information.
-  - **freeform**: Used as a fallback for unclear or small talk messages.
-- The prompt uses a "context" from the last interaction to interpret follow-up queries.
-- The expected response format is a JSON object indicating the intent and parameters.
-- Examples are provided to illustrate how to classify different user inputs.
-- The `router_chain` is created by combining the `classification_prompt` with the `llm` instance.
+- **Intent Classification for Voice Assistant**: The script is designed to classify user intents for a voice assistant named Jarvis. It processes natural language inputs to determine user requests.
+
+- **Available Intents**:
+  - **get_weather**: Identifies requests for weather information, extracting a location.
+  - **get_stock**: Detects inquiries about stock information, extracting a stock symbol like TSLA, AAPL, or MSFT.
+  - **search_web**: Recognizes requests for general or up-to-date information, extracting a query for news, updates, or factual queries.
+  - **freeform**: Serves as a fallback for small talk or unclear requests not covered by other intents.
+
+- **Context Utilization**: The script uses context from previous interactions to interpret follow-up questions, ensuring continuity in conversation.
+
+- **Response Format**: The output is structured as a JSON object specifying the intent and relevant parameters.
+
+- **Example Scenarios**: Provides examples of user queries and the corresponding intent classification, demonstrating how the system extracts necessary information.
+
+- **Integration**: The classification prompt is combined with the `Ollama` model to form a `router_chain`, facilitating the processing of user inputs through the defined intents.
 
 ***
 ###### _Powered by Code Intelligence | DocGen_
