@@ -1,0 +1,84 @@
+{% block content %} {% if page.is_homepage %}
+<div class="home-page-banner">
+  <div class="banner-info">
+    <p class="left">FRONTPAGE</p>
+    <div class="right">
+      <img src="../assets/link_icon.svg" alt="link icon" />
+      <a
+        href="{{ config.extra.repo_url }}"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        link to Github repo
+      </a>
+    </div>
+  </div>
+  <h1 class="banner-header">Welcome to your docs portal.</h1>
+  <div class="copy-wrapper">
+    <div class="squares">
+      <div class="content square">
+        <div class="img-wrapper">
+          <img src="../assets/workflow_icon.svg" alt="workflow icon" />
+        </div>
+        <h5>Streamline your workflow</h5>
+        <p>
+          Dive into documents crafted in seconds. Spend less time writing and
+          more time achieving.
+        </p>
+      </div>
+      <div class="content square">
+        <div class="img-wrapper">
+          <img src="../assets/productivity_icon.svg" alt="productivity icon" />
+        </div>
+        <h5>Precision meets innovation</h5>
+        <p>
+          Let DocGen handle the complexity of content creation—accurate,
+          efficient, and ready when you are.
+        </p>
+      </div>
+      <div class="content square">
+        <div class="img-wrapper">
+          <img src="../assets/growth_icon.svg" alt="growth icon" />
+        </div>
+        <h5>Demystify your codebase</h5>
+        <p>
+          Harness the power of DocGen to clarify complex code, ensuring your
+          team collaborates effectively.
+        </p>
+      </div>
+    </div>
+    <div class="content">
+      <div class="img-wrapper">
+        <img src="../assets/hub_icon.svg" alt="hub icon" />
+      </div>
+      <p>
+        Just a heads-up, you're browsing through a documentation site that's
+        been whipped up by some pretty clever AI. Yep, that's right—no human
+        hands typed this out! It's all crafted by digital brainpower.
+      </p>
+      <p>
+        If you see something that is out of place or incorrect,
+        <a
+          href="mailto:{{ config.extra.contact_email }}"
+          target="_blank"
+          rel="noopener noreferrer"
+          >let us know</a
+        >.
+      </p>
+    </div>
+  </div>
+  <div>
+    <p>
+      AI-generated content may be inaccurate and requires human review.
+      <a
+        href="https://squidfunk.github.io/mkdocs-material/"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        GenAI Business Rules
+      </a>
+    </p>
+  </div>
+</div>
+{{ page.content|safe }} {% endif %} {% if not page.is_homepage %} {{
+page.content|safe }} {% endif %} {% endblock %}
