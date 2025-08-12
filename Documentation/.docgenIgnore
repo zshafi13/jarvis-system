@@ -1,0 +1,38 @@
+# Usage guidelines:
+# Any File extensions to be ignored should get their own line and start with a .
+# Any specific files or folders to be ignored should have their full path included, for example "src/main/example.java" or "src/main/example" for the example folder
+# Files and Folders will only be ignored if the path is a FULL MATCH
+# To included files or folders of a specific pattern, start with "*/" 
+# for example "*/example.java" will ignore all files of the name "example.java", regardless of their location in the directory
+# for example "*/example" will ignore all folders of the name "example", regardless of their location in the directory
+
+# Media Files
+.jpg
+.jpeg
+.png
+.gif
+.svg
+.bmp
+.ico
+.cur
+.mp4
+.mov
+.heic
+
+# Binary File Types
+.so
+.DS_Store
+.bin
+.pyc
+  
+# Other File types
+.pdf
+.md
+.mdx
+.less
+.css
+.scss
+.sass
+
+# Folders
+Documentation # DocGen output folder

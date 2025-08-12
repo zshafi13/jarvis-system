@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  code-intelligence-docgensite:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    command: mkdocs serve -a 0.0.0.0:8000

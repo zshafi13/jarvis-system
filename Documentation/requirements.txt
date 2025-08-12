@@ -1,0 +1,5 @@
+mkdocs
+mkdocs-material
+mkdocs-include_dir_to_nav
+mkdocs-encryptcontent-plugin
+markdown-callouts
