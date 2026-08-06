@@ -94,14 +94,23 @@ class JarvisConversationAgent(conversation.ConversationEntity):
 
             if not tool_calls:
                 recovered = parse_disguised_tool_call(content)
-                if not recovered:
+                if recovered:
+                    name, args = recovered
+                    _LOGGER.warning("Recovered a disguised tool call from model output: %s(%s)", name, args)
+                    history.append({"role": "assistant", "content": content})
+                    result = await self._execute_tool(name, args)
+                    history.append({"role": "tool", "name": name, "content": result})
+                    continue
+
+                if content:
                     return content
 
-                name, args = recovered
-                _LOGGER.warning("Recovered a disguised tool call from model output: %s(%s)", name, args)
-                history.append({"role": "assistant", "content": content})
-                result = await self._execute_tool(name, args)
-                history.append({"role": "tool", "name": name, "content": result})
+                # Genuinely empty content with no tool call is never a valid final
+                # answer - nudge and retry instead of silently speaking nothing.
+                _LOGGER.warning("Model returned empty content with no tool call, retrying")
+                history.append(
+                    {"role": "user", "content": "(Empty response - please answer the previous message, calling a tool if needed.)"}
+                )
                 continue
 
             history.append({"role": "assistant", "content": message.get("content", ""), "tool_calls": tool_calls})
@@ -114,7 +123,7 @@ class JarvisConversationAgent(conversation.ConversationEntity):
 
         # Hit max_rounds without a final answer - force one without tools available.
         followup = await self._client.chat(model=self._model, messages=history)
-        return (followup["message"].get("content") or "").strip()
+        return (followup["message"].get("content") or "").strip() or "Sorry, I'm drawing a blank on that one."
 
     async def _execute_tool(self, name: str, args: dict) -> str:
         if name == "get_weather":
