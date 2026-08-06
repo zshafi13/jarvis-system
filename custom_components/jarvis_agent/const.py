@@ -5,8 +5,8 @@ CONF_OLLAMA_MODEL = "ollama_model"
 CONF_TAVILY_API_KEY = "tavily_api_key"
 CONF_DEFAULT_LOCATION = "default_location"
 
-DEFAULT_OLLAMA_HOST = "http://localhost:11434"
-DEFAULT_OLLAMA_MODEL = "llama3.2"
+DEFAULT_OLLAMA_HOST = "http://192.168.4.21:11434"
+DEFAULT_OLLAMA_MODEL = "qwen2.5:7b"
 DEFAULT_LOCATION = "Allentown"
 
 # Max turns of conversation history kept per HA conversation_id, mirroring the

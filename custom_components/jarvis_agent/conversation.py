@@ -9,6 +9,7 @@ than the original's fixed 3, since freeform chat (the common case) now takes exa
 from __future__ import annotations
 
 import logging
+from functools import partial
 
 from homeassistant.components import conversation
 from homeassistant.config_entries import ConfigEntry
@@ -35,13 +36,21 @@ class JarvisConversationAgent(conversation.ConversationEntity):
     def __init__(self, entry: ConfigEntry) -> None:
         self.entry = entry
         self._attr_unique_id = entry.entry_id
-        self._client = AsyncClient(host=entry.data[CONF_OLLAMA_HOST])
+        self._ollama_host = entry.data[CONF_OLLAMA_HOST]
+        self._client: AsyncClient | None = None
         self._model = entry.data[CONF_OLLAMA_MODEL]
         self._tavily_key = entry.data.get(CONF_TAVILY_API_KEY)
         self._default_location = entry.data.get(CONF_DEFAULT_LOCATION, DEFAULT_LOCATION)
         # Per-conversation_id history, unlike the original agent_state.py which
         # was a single global shared across every user/session.
         self._history: dict[str, list[dict]] = {}
+
+    async def async_added_to_hass(self) -> None:
+        # AsyncClient() does blocking SSL cert loading in its constructor, so it
+        # can't be built inline in __init__, which runs in the event loop.
+        self._client = await self.hass.async_add_executor_job(
+            partial(AsyncClient, host=self._ollama_host)
+        )
 
     @property
     def supported_languages(self) -> list[str]:
