@@ -293,8 +293,17 @@ TOOL_SCHEMAS = [
             "description": "Get current weather for a city.",
             "parameters": {
                 "type": "object",
-                "properties": {"location": {"type": "string", "description": "City name"}},
-                "required": ["location"],
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": (
+                            "City name. OMIT this field entirely if the user didn't specify a city "
+                            "(e.g. just 'what's the weather') - it will default to their home city. "
+                            "Never guess or make up a city name."
+                        ),
+                    }
+                },
+                "required": [],
             },
         },
     },
