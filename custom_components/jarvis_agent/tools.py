@@ -85,8 +85,31 @@ def search_web(query: str, api_key: str) -> str:
         return "Sorry, the web search didn't come back with anything."
 
 
-def get_home_state(hass: HomeAssistant, query: str, limit: int = 8) -> str:
-    """Search entities by name/id and return their live state directly.
+# Domains that are essentially never the answer to a status question - excluding
+# these keeps diagnostic/config noise (retry limits, firmware update entities, etc.)
+# from crowding out the entities that actually matter in a limited result set.
+_NOISE_DOMAINS = {"number", "button", "update", "select"}
+
+# Query keywords mapped to binary_sensor/cover device_classes that answer them, so a
+# search for "window" also surfaces entities named nothing like "window" (e.g.
+# "philio_multi_sensor_window_door_is_open") as long as they're typed correctly.
+_DEVICE_CLASS_HINTS = {
+    "window": {"window", "door", "opening"},
+    "door": {"door", "garage_door", "opening", "lock"},
+    "garage": {"garage_door", "door", "opening"},
+    "lock": {"lock"},
+    "locked": {"lock"},
+    "motion": {"motion", "occupancy"},
+    "leak": {"moisture"},
+    "water": {"moisture"},
+    "smoke": {"smoke"},
+    "temperature": {"temperature"},
+    "open": {"window", "door", "garage_door", "opening"},
+}
+
+
+def get_home_state(hass: HomeAssistant, query: str, limit: int = 25) -> str:
+    """Search entities by name/id/device_class and return their live state directly.
 
     HA's built-in conversation agent (used by control_home_assistant below) can only
     answer status questions for entities whose device_class matches its intent
@@ -98,11 +121,31 @@ def get_home_state(hass: HomeAssistant, query: str, limit: int = 8) -> str:
     control_home_assistant for actions.
     """
     query_terms = query.lower().split()
-    matches = [
-        state
-        for state in hass.states.async_all()
-        if all(term in f"{state.entity_id} {state.name}".lower() for term in query_terms)
-    ]
+    relevant_classes: set[str] = set()
+    for term in query_terms:
+        # Naive singularization: the model may pass "windows"/"doors"/"locks" while
+        # the hint map is keyed on the singular form.
+        for candidate in (term, term[:-1] if term.endswith("s") else term):
+            relevant_classes |= _DEVICE_CLASS_HINTS.get(candidate, set())
+
+    class_matches = []
+    name_matches = []
+    for state in hass.states.async_all():
+        domain = state.entity_id.split(".", 1)[0]
+        if domain in _NOISE_DOMAINS:
+            continue
+        device_class = state.attributes.get("device_class", "")
+        if device_class in relevant_classes:
+            class_matches.append(state)
+        elif all(term in f"{state.entity_id} {state.name}".lower() for term in query_terms):
+            name_matches.append(state)
+
+    # When the query maps to a known device_class (window, door, lock, ...), trust
+    # that over name matching: sub-entities sharing a device's name (battery, tamper,
+    # firmware, a network-wide "system software failure" flag that's "on" for nearly
+    # every node) are noise that previously drowned out the entity that actually
+    # answers the question, and could push it past the result limit entirely.
+    matches = class_matches if class_matches else name_matches
 
     if not matches:
         return f"No entities found matching '{query}'."
@@ -112,7 +155,9 @@ def get_home_state(hass: HomeAssistant, query: str, limit: int = 8) -> str:
         device_class = state.attributes.get("device_class", "")
         dc_note = f" (device_class={device_class})" if device_class else ""
         lines.append(f"{state.entity_id} [{state.name}]{dc_note}: {state.state}")
-    return "\n".join(lines)
+
+    note = f"\n({len(matches) - limit} more matches not shown)" if len(matches) > limit else ""
+    return "\n".join(lines) + note
 
 
 async def control_home_assistant(hass: HomeAssistant, command: str) -> str:
