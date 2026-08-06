@@ -327,7 +327,12 @@ TOOL_SCHEMAS = [
                 "properties": {
                     "command": {
                         "type": "string",
-                        "description": "The device command in natural language, e.g. 'turn on the kitchen lights'",
+                        "description": (
+                            "A FULL natural-language sentence exactly as a person would say it out loud, "
+                            "e.g. 'turn on the kitchen lights' or 'set the thermostat to 70 degrees'. NEVER "
+                            "use snake_case, dots, or service-call syntax like turn_on.tv or fan.turn_on - "
+                            "write it as plain spoken English, the way you'd say it to a person."
+                        ),
                     }
                 },
                 "required": ["command"],
