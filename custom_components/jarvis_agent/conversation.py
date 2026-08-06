@@ -80,7 +80,13 @@ class JarvisConversationAgent(conversation.ConversationEntity):
         # get_home_state on the name it found. `tools` must be passed on every
         # round, including followups, or the model can never make a second call.
         for _ in range(max_rounds):
-            response = await self._client.chat(model=self._model, messages=history, tools=TOOL_SCHEMAS)
+            # Low temperature: measured ~1/8 failure rate at Ollama's default (0.8)
+            # where the model writes a tool call out as plain text instead of
+            # actually invoking it (e.g. 'control_home_assistant {"command": ...}'
+            # as the spoken response) - 0/8 across the same test at 0.1.
+            response = await self._client.chat(
+                model=self._model, messages=history, tools=TOOL_SCHEMAS, options={"temperature": 0.1}
+            )
             message = response["message"]
             tool_calls = message.get("tool_calls")
 
