@@ -85,6 +85,36 @@ def search_web(query: str, api_key: str) -> str:
         return "Sorry, the web search didn't come back with anything."
 
 
+def get_home_state(hass: HomeAssistant, query: str, limit: int = 8) -> str:
+    """Search entities by name/id and return their live state directly.
+
+    HA's built-in conversation agent (used by control_home_assistant below) can only
+    answer status questions for entities whose device_class matches its intent
+    templates exactly - a binary_sensor with device_class "safety" won't match its
+    "is X open" intent even if that's what the sensor represents in practice. Since
+    this integration runs in-process inside Home Assistant, it can read any entity's
+    live state directly via hass.states and let the model reason about it, sidestepping
+    that limitation entirely. Use this for status/state questions; use
+    control_home_assistant for actions.
+    """
+    query_terms = query.lower().split()
+    matches = [
+        state
+        for state in hass.states.async_all()
+        if all(term in f"{state.entity_id} {state.name}".lower() for term in query_terms)
+    ]
+
+    if not matches:
+        return f"No entities found matching '{query}'."
+
+    lines = []
+    for state in matches[:limit]:
+        device_class = state.attributes.get("device_class", "")
+        dc_note = f" (device_class={device_class})" if device_class else ""
+        lines.append(f"{state.entity_id} [{state.name}]{dc_note}: {state.state}")
+    return "\n".join(lines)
+
+
 async def control_home_assistant(hass: HomeAssistant, command: str) -> str:
     """Delegate a device-control request to HA's own built-in conversation agent.
 
@@ -156,10 +186,33 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "get_home_state",
+            "description": (
+                "Look up the current state of smart home entities by searching their name/id, e.g. "
+                "'garage' or 'bedroom temperature'. Use this for ANY status/state question about a "
+                "device or sensor ('is X open', 'what's the temperature in Y', 'is the door locked') - "
+                "it reads live entity state directly and is more reliable than control_home_assistant "
+                "for questions, even if the entity's naming or type seems unrelated at first."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Keywords to search entity names/ids for, e.g. 'garage' or 'bedroom'",
+                    }
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "control_home_assistant",
             "description": (
-                "Control or query smart home devices (lights, switches, thermostats, sensors, etc.) "
-                "through Home Assistant. Use this for anything about the user's home devices."
+                "Perform an ACTION on a smart home device (turn on/off, open/close, set temperature, etc.) "
+                "through Home Assistant. For questions about current state, use get_home_state instead."
             ),
             "parameters": {
                 "type": "object",

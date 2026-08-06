@@ -20,7 +20,7 @@ from ollama import AsyncClient
 
 from .const import CONF_DEFAULT_LOCATION, CONF_OLLAMA_HOST, CONF_OLLAMA_MODEL, CONF_TAVILY_API_KEY, DEFAULT_LOCATION, MAX_HISTORY_MESSAGES
 from .prompts import SYSTEM_PROMPT
-from .tools import TOOL_SCHEMAS, control_home_assistant, get_stock, get_weather, search_web
+from .tools import TOOL_SCHEMAS, control_home_assistant, get_home_state, get_stock, get_weather, search_web
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -104,6 +104,8 @@ class JarvisConversationAgent(conversation.ConversationEntity):
             return await self.hass.async_add_executor_job(search_web, args.get("query", ""), self._tavily_key)
         if name == "control_home_assistant":
             return await control_home_assistant(self.hass, args.get("command", ""))
+        if name == "get_home_state":
+            return get_home_state(self.hass, args.get("query", ""))
         return f"Unknown tool requested: {name}"
 
     def _new_conversation_id(self) -> str:
