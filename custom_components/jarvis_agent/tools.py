@@ -152,9 +152,8 @@ def get_home_state(hass: HomeAssistant, query: str, limit: int = 25) -> str:
     device_reg = dr.async_get(hass)
     area_reg = ar.async_get(hass)
 
-    class_and_name_matches = []
-    class_only_matches = []
-    name_matches = []
+    full_matches = []  # class_ok AND every query term present
+    partial_matches = []  # (state, overlap_score) - class_ok OR at least one term present
     for state in hass.states.async_all():
         domain = state.entity_id.split(".", 1)[0]
         if domain in _NOISE_DOMAINS:
@@ -177,41 +176,37 @@ def get_home_state(hass: HomeAssistant, query: str, limit: int = 25) -> str:
                 haystack += f" {area.name}".lower()
 
         class_ok = device_class in relevant_classes
-        name_ok = all(term in haystack for term in query_terms)
+        overlap_score = sum(1 for term in query_terms if term in haystack)
+        name_ok = overlap_score == len(query_terms)
 
         if class_ok and name_ok:
-            class_and_name_matches.append(state)
-        elif class_ok:
-            class_only_matches.append(state)
-        elif name_ok:
-            name_matches.append(state)
+            full_matches.append(state)
+        elif class_ok or overlap_score > 0:
+            partial_matches.append((state, overlap_score, class_ok))
 
     # Entities satisfying BOTH the device_class hint and every query term by name/area
     # are trusted exclusively when any exist - e.g. "bedroom temperature" needs an
     # entity that's both device_class=temperature AND actually associated with
     # "bedroom", not just any temperature sensor in the house (which previously
     # included a 3D printer's print-bed temperature - "bed" was enough to slip
-    # through as a false positive here, so mixing in the weaker tiers even when this
-    # one already has a confident answer would reintroduce that same noise).
+    # through as a false positive here, so mixing in weaker matches even when this
+    # tier already has a confident answer would reintroduce that same noise).
     #
-    # Only when NOTHING satisfies both do class-only and name-only matches get
-    # MERGED as fallback, rather than one chosen exclusively over the other - e.g.
-    # for "garage open", the real answer (garage_intrusion, device_class=garage_door)
-    # is class-only, since its name doesn't literally contain "open", while an
-    # unrelated relay switch that doesn't actually answer the question
-    # (garage_opener) matches by name only via the "open" substring inside
-    # "opener". Showing both lets the model use judgment instead of a tier-priority
-    # heuristic silently hiding the right one.
-    if class_and_name_matches:
-        matches = class_and_name_matches
+    # Otherwise, fall back to every entity with at least some relevance (device_class
+    # match and/or partial name overlap), ranked by how relevant it actually is
+    # rather than left unordered. class_ok is the PRIMARY sort key, not overlap_score:
+    # for "garage open", switch.garage_opener has a higher raw overlap_score than
+    # garage_intrusion (its name coincidentally contains both "garage" AND "open",
+    # since "open" is a substring of "opener") but isn't actually the right kind of
+    # entity to answer a status question - being device_class=garage_door and thus
+    # semantically an actual position sensor matters more than incidental text
+    # overlap, so that has to be checked first, with overlap_score only breaking
+    # ties among entities that are equally class-relevant (or equally not).
+    if full_matches:
+        matches = full_matches
     else:
-        seen_ids = set()
-        matches = []
-        for group in (class_only_matches, name_matches):
-            for state in group:
-                if state.entity_id not in seen_ids:
-                    seen_ids.add(state.entity_id)
-                    matches.append(state)
+        partial_matches.sort(key=lambda item: (item[2], item[1]), reverse=True)
+        matches = [state for state, _score, _class_ok in partial_matches]
 
     if not matches:
         return f"No entities found matching '{query}'."
