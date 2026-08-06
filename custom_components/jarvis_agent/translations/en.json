@@ -1,0 +1,15 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Jarvis Agent",
+        "data": {
+          "ollama_host": "Ollama server URL",
+          "ollama_model": "Ollama model",
+          "tavily_api_key": "Tavily API key (optional, for web search)",
+          "default_location": "Default location for weather"
+        }
+      }
+    }
+  }
+}
