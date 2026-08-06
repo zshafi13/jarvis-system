@@ -99,7 +99,6 @@ _NOISE_DOMAINS = {"number", "button", "update", "select"}
 _DEVICE_CLASS_HINTS = {
     "window": {"window", "door", "opening"},
     "door": {"door", "garage_door", "opening", "lock"},
-    "garage": {"garage_door", "door", "opening"},
     "lock": {"lock"},
     "locked": {"lock"},
     "motion": {"motion", "occupancy"},
@@ -108,6 +107,24 @@ _DEVICE_CLASS_HINTS = {
     "smoke": {"smoke"},
     "temperature": {"temperature"},
     "open": {"window", "door", "garage_door", "opening"},
+}
+# Deliberately NOT in the map above: words like "garage" that are locations in
+# THIS house, not device-type concepts. Mapping "garage" -> garage_door/door/opening
+# used to mean any door-class entity in the whole house (including an entirely
+# unrelated 3D printer's own enclosure door, which is also device_class=door)
+# would match a "garage" query with no way to prefer the actually-relevant one.
+# Location words are handled by the area-aware name matching below instead.
+
+# Stripped before matching regardless of what the model actually sends as the query
+# (the tool description asks for bare keywords, but that's not reliably followed) -
+# "is the garage open" needs to behave like "garage open", since "is"/"the" will
+# essentially never appear in an entity's name/id and would otherwise force every
+# query containing them down the noisier device_class-only fallback path.
+_STOPWORDS = {
+    "a", "an", "the", "is", "are", "was", "were", "am", "be", "been", "being",
+    "any", "some", "please", "can", "you", "could", "would", "will", "to", "of",
+    "in", "on", "at", "for", "and", "or", "what", "whats", "what's", "how",
+    "check", "tell", "me", "my", "there", "it", "its", "it's",
 }
 
 
@@ -123,7 +140,7 @@ def get_home_state(hass: HomeAssistant, query: str, limit: int = 25) -> str:
     that limitation entirely. Use this for status/state questions; use
     control_home_assistant for actions.
     """
-    query_terms = query.lower().split()
+    query_terms = [term for term in query.lower().split() if term not in _STOPWORDS] or query.lower().split()
     relevant_classes: set[str] = set()
     for term in query_terms:
         # Naive singularization: the model may pass "windows"/"doors"/"locks" while
@@ -133,8 +150,10 @@ def get_home_state(hass: HomeAssistant, query: str, limit: int = 25) -> str:
 
     entity_reg = er.async_get(hass)
     device_reg = dr.async_get(hass)
+    area_reg = ar.async_get(hass)
 
-    class_matches = []
+    class_and_name_matches = []
+    class_only_matches = []
     name_matches = []
     for state in hass.states.async_all():
         domain = state.entity_id.split(".", 1)[0]
@@ -144,22 +163,55 @@ def get_home_state(hass: HomeAssistant, query: str, limit: int = 25) -> str:
 
         haystack = f"{state.entity_id} {state.name}".lower()
         entity_entry = entity_reg.async_get(state.entity_id)
-        if entity_entry and entity_entry.device_id:
-            device = device_reg.async_get(entity_entry.device_id)
-            if device:
-                haystack += f" {device.name or ''} {device.manufacturer or ''} {device.model or ''}".lower()
+        area_id = None
+        if entity_entry:
+            area_id = entity_entry.area_id
+            if entity_entry.device_id:
+                device = device_reg.async_get(entity_entry.device_id)
+                if device:
+                    haystack += f" {device.name or ''} {device.manufacturer or ''} {device.model or ''}".lower()
+                    area_id = area_id or device.area_id
+        if area_id:
+            area = area_reg.async_get_area(area_id)
+            if area:
+                haystack += f" {area.name}".lower()
 
-        if device_class in relevant_classes:
-            class_matches.append(state)
-        elif all(term in haystack for term in query_terms):
+        class_ok = device_class in relevant_classes
+        name_ok = all(term in haystack for term in query_terms)
+
+        if class_ok and name_ok:
+            class_and_name_matches.append(state)
+        elif class_ok:
+            class_only_matches.append(state)
+        elif name_ok:
             name_matches.append(state)
 
-    # When the query maps to a known device_class (window, door, lock, ...), trust
-    # that over name matching: sub-entities sharing a device's name (battery, tamper,
-    # firmware, a network-wide "system software failure" flag that's "on" for nearly
-    # every node) are noise that previously drowned out the entity that actually
-    # answers the question, and could push it past the result limit entirely.
-    matches = class_matches if class_matches else name_matches
+    # Entities satisfying BOTH the device_class hint and every query term by name/area
+    # are trusted exclusively when any exist - e.g. "bedroom temperature" needs an
+    # entity that's both device_class=temperature AND actually associated with
+    # "bedroom", not just any temperature sensor in the house (which previously
+    # included a 3D printer's print-bed temperature - "bed" was enough to slip
+    # through as a false positive here, so mixing in the weaker tiers even when this
+    # one already has a confident answer would reintroduce that same noise).
+    #
+    # Only when NOTHING satisfies both do class-only and name-only matches get
+    # MERGED as fallback, rather than one chosen exclusively over the other - e.g.
+    # for "garage open", the real answer (garage_intrusion, device_class=garage_door)
+    # is class-only, since its name doesn't literally contain "open", while an
+    # unrelated relay switch that doesn't actually answer the question
+    # (garage_opener) matches by name only via the "open" substring inside
+    # "opener". Showing both lets the model use judgment instead of a tier-priority
+    # heuristic silently hiding the right one.
+    if class_and_name_matches:
+        matches = class_and_name_matches
+    else:
+        seen_ids = set()
+        matches = []
+        for group in (class_only_matches, name_matches):
+            for state in group:
+                if state.entity_id not in seen_ids:
+                    seen_ids.add(state.entity_id)
+                    matches.append(state)
 
     if not matches:
         return f"No entities found matching '{query}'."
