@@ -20,6 +20,7 @@ from ollama import AsyncClient
 
 from .const import CONF_DEFAULT_LOCATION, CONF_OLLAMA_HOST, CONF_OLLAMA_MODEL, CONF_TAVILY_API_KEY, DEFAULT_LOCATION, MAX_HISTORY_MESSAGES
 from .prompts import SYSTEM_PROMPT
+from .tool_recovery import parse_disguised_tool_call
 from .tools import TOOL_SCHEMAS, control_home_assistant, get_home_state, get_stock, get_weather, list_devices, search_web
 
 _LOGGER = logging.getLogger(__name__)
@@ -89,9 +90,19 @@ class JarvisConversationAgent(conversation.ConversationEntity):
             )
             message = response["message"]
             tool_calls = message.get("tool_calls")
+            content = (message.get("content") or "").strip()
 
             if not tool_calls:
-                return (message.get("content") or "").strip()
+                recovered = parse_disguised_tool_call(content)
+                if not recovered:
+                    return content
+
+                name, args = recovered
+                _LOGGER.warning("Recovered a disguised tool call from model output: %s(%s)", name, args)
+                history.append({"role": "assistant", "content": content})
+                result = await self._execute_tool(name, args)
+                history.append({"role": "tool", "name": name, "content": result})
+                continue
 
             history.append({"role": "assistant", "content": message.get("content", ""), "tool_calls": tool_calls})
 
