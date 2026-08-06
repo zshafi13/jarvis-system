@@ -13,6 +13,9 @@ import logging
 import requests
 import yfinance as yf
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -128,6 +131,9 @@ def get_home_state(hass: HomeAssistant, query: str, limit: int = 25) -> str:
         for candidate in (term, term[:-1] if term.endswith("s") else term):
             relevant_classes |= _DEVICE_CLASS_HINTS.get(candidate, set())
 
+    entity_reg = er.async_get(hass)
+    device_reg = dr.async_get(hass)
+
     class_matches = []
     name_matches = []
     for state in hass.states.async_all():
@@ -135,9 +141,17 @@ def get_home_state(hass: HomeAssistant, query: str, limit: int = 25) -> str:
         if domain in _NOISE_DOMAINS:
             continue
         device_class = state.attributes.get("device_class", "")
+
+        haystack = f"{state.entity_id} {state.name}".lower()
+        entity_entry = entity_reg.async_get(state.entity_id)
+        if entity_entry and entity_entry.device_id:
+            device = device_reg.async_get(entity_entry.device_id)
+            if device:
+                haystack += f" {device.name or ''} {device.manufacturer or ''} {device.model or ''}".lower()
+
         if device_class in relevant_classes:
             class_matches.append(state)
-        elif all(term in f"{state.entity_id} {state.name}".lower() for term in query_terms):
+        elif all(term in haystack for term in query_terms):
             name_matches.append(state)
 
     # When the query maps to a known device_class (window, door, lock, ...), trust
@@ -158,6 +172,41 @@ def get_home_state(hass: HomeAssistant, query: str, limit: int = 25) -> str:
 
     note = f"\n({len(matches) - limit} more matches not shown)" if len(matches) > limit else ""
     return "\n".join(lines) + note
+
+
+def list_devices(hass: HomeAssistant) -> str:
+    """List every physical device's name/manufacturer/model/area.
+
+    Fallback for when get_home_state finds nothing: a query like "3D printer" will
+    never keyword-match a device named "X1C Genie" by "Bambu Lab" - there's no
+    literal overlap. Rather than hardcoding an ever-growing synonym dictionary for
+    every possible device type (which doesn't scale to new devices added later),
+    this hands the model the raw device list so it can use its own knowledge (e.g.
+    recognizing Bambu Lab makes 3D printers) to find the right one, then call
+    get_home_state again with that device's actual name to read its entities. This
+    is what makes adding new devices in HA require zero code changes here.
+    """
+    device_reg = dr.async_get(hass)
+    area_reg = ar.async_get(hass)
+
+    lines = []
+    for device in device_reg.devices.values():
+        name = device.name_by_user or device.name
+        if not name:
+            continue
+        area_name = ""
+        if device.area_id:
+            area = area_reg.async_get_area(device.area_id)
+            area_name = area.name if area else ""
+        parts = [name]
+        if device.manufacturer:
+            parts.append(f"by {device.manufacturer}")
+        if device.model:
+            parts.append(f"({device.model})")
+        if area_name:
+            parts.append(f"in {area_name}")
+        lines.append(" ".join(parts))
+    return "\n".join(lines)
 
 
 async def control_home_assistant(hass: HomeAssistant, command: str) -> str:
@@ -249,6 +298,20 @@ TOOL_SCHEMAS = [
                 },
                 "required": ["query"],
             },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_devices",
+            "description": (
+                "List every physical device in the smart home (name, manufacturer, model, area). Use this "
+                "when get_home_state finds no matching entities for something you'd expect to exist - e.g. "
+                "'3D printer' won't keyword-match a device literally named 'X1C Genie' by 'Bambu Lab', but "
+                "you can recognize that from this list using what you know about the world. Once you find "
+                "the right device here, call get_home_state again with its actual name."
+            ),
+            "parameters": {"type": "object", "properties": {}},
         },
     },
     {

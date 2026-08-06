@@ -2,9 +2,9 @@
 
 Where the original made up to 3 sequential blocking Ollama calls per turn (intent
 classification, follow-up classification, then response/summary generation), this
-makes 1 call with tool-calling, or 2 if a tool is actually invoked (1 to decide/call
-the tool, 1 to turn the tool result into a spoken reply) - and both are always fewer
-than the original's fixed 3, since freeform chat (the common case) now takes exactly 1.
+makes 1 call with tool-calling for plain chat, or up to a few more when tools chain
+(e.g. list_devices to find an unfamiliar device, then get_home_state to read it) -
+still typically fewer than the original's fixed 3 for the common freeform-chat case.
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from ollama import AsyncClient
 
 from .const import CONF_DEFAULT_LOCATION, CONF_OLLAMA_HOST, CONF_OLLAMA_MODEL, CONF_TAVILY_API_KEY, DEFAULT_LOCATION, MAX_HISTORY_MESSAGES
 from .prompts import SYSTEM_PROMPT
-from .tools import TOOL_SCHEMAS, control_home_assistant, get_home_state, get_stock, get_weather, search_web
+from .tools import TOOL_SCHEMAS, control_home_assistant, get_home_state, get_stock, get_weather, list_devices, search_web
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -74,22 +74,28 @@ class JarvisConversationAgent(conversation.ConversationEntity):
         intent_response.async_set_speech(reply_text)
         return conversation.ConversationResult(response=intent_response, conversation_id=conversation_id)
 
-    async def _run_tool_calling_loop(self, history: list[dict]) -> str:
-        response = await self._client.chat(model=self._model, messages=history, tools=TOOL_SCHEMAS)
-        message = response["message"]
-        tool_calls = message.get("tool_calls")
+    async def _run_tool_calling_loop(self, history: list[dict], max_rounds: int = 5) -> str:
+        # Looped (not a single call + one followup) so tools can chain - e.g.
+        # list_devices to identify an unfamiliar device by manufacturer, then
+        # get_home_state on the name it found. `tools` must be passed on every
+        # round, including followups, or the model can never make a second call.
+        for _ in range(max_rounds):
+            response = await self._client.chat(model=self._model, messages=history, tools=TOOL_SCHEMAS)
+            message = response["message"]
+            tool_calls = message.get("tool_calls")
 
-        if not tool_calls:
-            return (message.get("content") or "").strip()
+            if not tool_calls:
+                return (message.get("content") or "").strip()
 
-        history.append({"role": "assistant", "content": message.get("content", ""), "tool_calls": tool_calls})
+            history.append({"role": "assistant", "content": message.get("content", ""), "tool_calls": tool_calls})
 
-        for call in tool_calls:
-            name = call["function"]["name"]
-            args = call["function"].get("arguments") or {}
-            result = await self._execute_tool(name, args)
-            history.append({"role": "tool", "name": name, "content": result})
+            for call in tool_calls:
+                name = call["function"]["name"]
+                args = call["function"].get("arguments") or {}
+                result = await self._execute_tool(name, args)
+                history.append({"role": "tool", "name": name, "content": result})
 
+        # Hit max_rounds without a final answer - force one without tools available.
         followup = await self._client.chat(model=self._model, messages=history)
         return (followup["message"].get("content") or "").strip()
 
@@ -106,6 +112,8 @@ class JarvisConversationAgent(conversation.ConversationEntity):
             return await control_home_assistant(self.hass, args.get("command", ""))
         if name == "get_home_state":
             return get_home_state(self.hass, args.get("query", ""))
+        if name == "list_devices":
+            return list_devices(self.hass)
         return f"Unknown tool requested: {name}"
 
     def _new_conversation_id(self) -> str:
