@@ -1,3 +1,7 @@
+# Secrets
+.env
+*.env
+
 # Ignore compiled and cache files
 __pycache__/
 *.pyc
@@ -11,6 +15,7 @@ jarvis-env/
 
 # XTTS files
 output.wav
+jarvis_reply.wav
 tts_cache/
 
 # macOS system files
