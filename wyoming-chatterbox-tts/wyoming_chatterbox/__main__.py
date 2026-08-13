@@ -28,7 +28,11 @@ def build_wyoming_info(speaker_wav: str) -> Info:
                         attribution=Attribution(name="jarvis-system", url=""),
                         installed=True,
                         version=None,
-                        languages=["en"],
+                        # Home Assistant asks for the full locale ("en_US"), not the
+                        # bare language, and rejects the engine outright if it isn't
+                        # advertised: "Language 'en_US' not supported". Both forms and
+                        # the hyphenated variant are listed since callers differ.
+                        languages=["en_US", "en-US", "en_GB", "en-GB", "en"],
                     )
                 ],
             )

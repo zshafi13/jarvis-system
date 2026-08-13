@@ -84,7 +84,53 @@ python3 -m wyoming_piper \
 
 This is intentionally the *stock* Piper voice, not the cloned Jarvis voice — the point of this step
 is to validate the new architecture is actually fast end-to-end before adding the custom TTS. We
-swap this for `wyoming-chatterbox-tts` from this repo in a later step.
+add `wyoming-chatterbox-tts` alongside it in the next step.
+
+**Leave Piper running.** Chatterbox goes on its own port (10201), so switching between the cloned
+voice and the fast stock one is a single Home Assistant pipeline setting rather than a rebuild.
+
+## 6b. wyoming-chatterbox-tts (the cloned Bettany/JARVIS voice)
+
+```powershell
+mkdir C:\Wyoming\wyoming-chatterbox        # copy wyoming_chatterbox/ from this repo into it
+copy jarvisclean2.wav C:\Wyoming\          # ~7s reference clip is plenty
+cd C:\Wyoming\wyoming-chatterbox
+C:\Python311\python.exe -m venv .venv
+.\.venv\Scripts\python.exe -m pip install chatterbox-tts "wyoming>=1.5.0"
+
+# MUST come after chatterbox-tts: it depends on plain `torch`, so pip pulls the
+# CPU wheel from PyPI and silently overwrites any CUDA build installed earlier.
+# Check with: python -c "import torch; print(torch.cuda.is_available())"
+.\.venv\Scripts\python.exe -m pip install --force-reinstall `
+  torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+```
+
+Then run `run-chatterbox.ps1` from this folder. First start downloads model weights (~4 min);
+subsequent starts load in ~10s.
+
+Three things that each fail quietly:
+
+- **Firewall.** The existing "Wyoming Services" rule only covers the ports it was created with.
+  Add 10201: `Set-NetFirewallRule -DisplayName "Wyoming Services" -LocalPort 10200,10201,10300,10400 -Protocol TCP`.
+  Symptom: the service logs "ready" and listens on 0.0.0.0, but Home Assistant can't reach it.
+- **Working directory.** See the comment in `run-chatterbox.ps1`.
+- **Language advertisement.** Home Assistant asks for `en_US`, not `en`, and rejects the engine with
+  `Language 'en_US' not supported` if only the bare language is advertised.
+
+### Measured performance (RTX 3060, 12GB)
+
+Generation runs at roughly **0.66x realtime** — slower than the audio plays back:
+
+| Reply | Generate | Audio |
+|---|---|---|
+| "Done." | 1.39s | 0.80s |
+| "The garage door is closed." | 1.95s | 1.56s |
+| "The P1S Abu is running with about 2 minutes left." | 4.35s | 2.96s |
+
+End-to-end through Home Assistant (which also transcodes to MP3), a device command lands around
+4s versus ~0.3s on Piper. That is the price of the cloned voice on this hardware; because
+generation is slower than playback, per-sentence streaming improves time-to-first-audio but cannot
+close the gap on long replies.
 
 ## 7. Windows Firewall / WSL2 networking
 
