@@ -1,0 +1,116 @@
+# Panda Touch — display bring-up ONLY.
+#
+# Flash this before the real UI. It draws a test pattern and nothing else, because the pin map
+# below is a hypothesis (see INVESTIGATION.md): BTT publishes no schematic, and the pin numbers
+# could not be recovered from the stock firmware. These values are the Sunton ESP32-8048S050
+# reference design, which is the most common ESP32-S3 5" 800x480 layout.
+#
+# Read the result against the symptom table in INVESTIGATION.md - a test pattern makes a wrong
+# pin map obvious, where a dashboard would just look broken.
+#
+# BACK UP THE STOCK FIRMWARE FIRST:
+#   esptool read_flash 0x0 0x1000000 panda_stock_backup.bin
+
+esphome:
+  name: panda-touch
+  friendly_name: Panda Touch
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240: y
+      CONFIG_ESP32S3_DATA_CACHE_64KB: y
+      # The 800x480 RGB565 framebuffer is 768KB and lives in PSRAM; these let code and
+      # constants live there too, which the RGB panel driver needs headroom for.
+      CONFIG_SPIRAM_FETCH_INSTRUCTIONS: y
+      CONFIG_SPIRAM_RODATA: y
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+logger:
+  level: DEBUG
+
+api:
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Panda Touch Fallback"
+
+# Try this first if the screen stays dark - a wrong backlight pin looks identical to a wrong
+# panel pin map, and this one is cheap to rule out.
+output:
+  - platform: ledc
+    pin: 2
+    frequency: 1220
+    id: backlight_pwm
+
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    name: Display Backlight
+    id: back_light
+    restore_mode: ALWAYS_ON
+
+display:
+  - platform: rpi_dpi_rgb
+    id: main_display
+    update_interval: 1s
+    auto_clear_enabled: false
+    color_order: RGB
+    invert_colors: true
+    dimensions:
+      width: 800
+      height: 480
+    de_pin: 40
+    hsync_pin: 39
+    vsync_pin: 41
+    pclk_pin: 42
+    # Deliberately conservative. The reference design runs 12.5MHz; start low and raise only
+    # once the image is stable, since too high shows as tearing rather than outright failure.
+    pclk_frequency: 10MHz
+    hsync_pulse_width: 4
+    hsync_front_porch: 8
+    hsync_back_porch: 8
+    vsync_pulse_width: 4
+    vsync_front_porch: 8
+    vsync_back_porch: 8
+    data_pins:
+      red: [45, 48, 47, 21, 14]
+      green: [5, 6, 7, 15, 16, 4]
+      blue: [8, 3, 46, 9, 1]
+    lambda: |-
+      // Corner markers prove geometry and orientation; colour bars prove the channel arrays are
+      // in the right order. If red and blue are swapped, the bars say so immediately.
+      it.filled_rectangle(0,   0, 200, 480, Color(255, 0, 0));
+      it.filled_rectangle(200, 0, 200, 480, Color(0, 255, 0));
+      it.filled_rectangle(400, 0, 200, 480, Color(0, 0, 255));
+      it.filled_rectangle(600, 0, 200, 480, Color(255, 255, 255));
+      it.filled_rectangle(0,        0, 40, 40, Color(255, 255, 0));   // top-left
+      it.filled_rectangle(760,      0, 40, 40, Color(0, 255, 255));   // top-right
+      it.filled_rectangle(0,      440, 40, 40, Color(255, 0, 255));   // bottom-left
+      it.filled_rectangle(760,    440, 40, 40, Color(0, 0, 0));       // bottom-right
+      it.rectangle(0, 0, 800, 480, Color(255, 255, 255));             // 1px border = full extent
+
+# Touch is commented out until the controller is confirmed. GT911 is the usual pairing with this
+# panel, but guessing a touch controller can hang the I2C bus and make display debugging harder,
+# so prove the display first.
+#
+# i2c:
+#   sda: 19
+#   scl: 20
+#   scan: true          # log the scan - it names the address, which identifies the controller
+#
+# touchscreen:
+#   - platform: gt911
+#     id: my_touch
+#     display: main_display
