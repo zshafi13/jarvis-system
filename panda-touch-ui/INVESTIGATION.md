@@ -48,41 +48,62 @@ This is the expected outcome: ESP-IDF builds `esp_lcd_rgb_panel_config_t` on the
 immediate values, so the pin numbers exist only as Xtensa `movi` operands inside compiled code.
 Recovering them means disassembling Xtensa LX7 — possible, but a large effort for 20 integers.
 
-## Working hypothesis: it is a Sunton/CYD-class reference design
+## The pin map — solved, from prior art
 
-Rather than disassemble or probe blind, start by assuming the panel follows the common
-ESP32-S3 5" 800x480 reference design (Sunton ESP32-8048S050 / "CYD"), which uses an **ST7262**
-RGB-565 panel and a **GT911** touch controller at I2C `0x5D`/`0x14`. That pin map is published
-and is the starting point in `panda-touch-bringup.yaml`:
+I concluded above that there was no prior art. **That was wrong.**
+[Disttrack/PandaTouch_streamDeck](https://github.com/Disttrack/PandaTouch_streamDeck) is a
+working PlatformIO firmware for this exact board, with a documented `docs/PINOUT.md` and
+`src/pt/pt_board.h`. Everything below is from there — working code, not inference.
 
 ```
-de 40   hsync 39   vsync 41   pclk 42   backlight 2 (LEDC)
-red   [45, 48, 47, 21, 14]
-green [5, 6, 7, 15, 16, 4]
-blue  [8, 3, 46, 9, 1]
+PCLK    GPIO5          DE      GPIO38
+HSYNC   not routed     VSYNC   not routed        <-- DE-only panel
+RESET   GPIO46         BL      GPIO21  (LEDC, 30kHz)
+
+red   (R3..R7) [6, 7, 8, 9, 10]
+green (G2..G7) [11, 12, 13, 14, 15, 16]
+blue  (B3..B7) [17, 18, 48, 47, 39]
+
+800x480 @ 14.8MHz pclk
+hsync: pulse 4, back porch 16, front porch 16
+vsync: pulse 4, back porch 32, front porch 32
+
+GT911 touch on I2C0: SDA GPIO2, SCL GPIO1 @100kHz, IRQ GPIO40, RST GPIO41
+I2C1 expansion header: SDA GPIO4, SCL GPIO3
 ```
 
-Source: [clowrey/esphome-esp32-8048s050-lvgl](https://github.com/clowrey/esphome-esp32-8048s050-lvgl).
+Two details that would each have cost hours:
 
-**This is a guess, not a finding.** It costs one flash to test and the failure modes are
-legible, which is why it beats probing first:
+- **The panel is DE-only.** HSYNC and VSYNC are not routed on the FPC. ESPHome's
+  `rpi_dpi_rgb` platform requires both, so it cannot drive this panel at all. Use `mipi_rgb`,
+  where `hsync_pin`/`vsync_pin` are optional.
+- **USB-C is not native USB.** It goes through a **CH340K** UART bridge to UART0
+  (TX GPIO43 / RX GPIO44), with DTR driving BOOT and RTS driving CHIP_PU. The ESP32-S3's
+  native USB OTG is on the **USB-A** port instead (D− GPIO19, D+ GPIO20). So flashing is
+  ordinary serial esptool, auto-reset works, and logs come back over the same cable.
 
-| Symptom | Likely meaning |
-|---|---|
-| Backlight on, screen black | pclk/de/vsync/hsync wrong, or backlight pin right but panel pins wrong |
-| Recognisable image, wrong colours | red/green/blue arrays swapped or misordered |
-| Image sheared or offset | timings (porches/pulse width) wrong, pins probably right |
-| Tearing / flicker | pclk too high — drop `pclk_frequency` and retry |
-| Nothing at all, no backlight | backlight pin wrong; try before assuming the panel is wrong |
+For the record, the guess this replaced was the Sunton ESP32-8048S050 reference pinout
+(de 40, hsync 39, vsync 41, pclk 42, backlight 2). It is wrong in every single value. Worth
+remembering before trusting a "same class of board" assumption again.
 
 ## Still unknown
 
-- Whether USB-C enumerates as a serial device for flashing. The ESP32-S3's native USB reaches
-  the port (the stock firmware reads firmware from a USB drive, i.e. it acts as USB *host*), so
-  the lines are connected; device-mode enumeration is untested.
-- Touch controller part number and its I2C/interrupt/reset pins.
 - Whether BTT's Recovery Tool can restore stock firmware after an overwrite.
-- Microphone interface (I2S vs analog) and pins — not needed for this build, the Pi keeps voice.
+- Microphone interface (I2S vs analog) and pins — not needed here, the Pi keeps voice.
+- Battery charge state reporting, if any is exposed to the MCU.
+
+## Failure-mode reference
+
+Still useful if the panel misbehaves after flashing:
+
+| Symptom | Likely meaning |
+|---|---|
+| Backlight on, screen black | pclk or DE wrong; check `reset_pin` is being driven |
+| Recognisable image, wrong colours | red/green/blue arrays swapped or bit order reversed |
+| Image sheared or offset | porches / pulse widths wrong, pins probably right |
+| Tearing / flicker | pclk too high — drop below 14.8MHz and retry |
+| Nothing at all, no backlight | backlight pin or LEDC frequency wrong — rule this out first |
+| I2C scan finds nothing | GT911 held in reset; check RST GPIO41 and IRQ GPIO40 |
 
 ## Procedure before the first write
 

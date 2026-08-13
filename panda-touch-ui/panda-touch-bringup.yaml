@@ -1,15 +1,13 @@
-# Panda Touch — display bring-up ONLY.
+# Panda Touch — display bring-up ONLY. Draws a test pattern, nothing else.
 #
-# Flash this before the real UI. It draws a test pattern and nothing else, because the pin map
-# below is a hypothesis (see INVESTIGATION.md): BTT publishes no schematic, and the pin numbers
-# could not be recovered from the stock firmware. These values are the Sunton ESP32-8048S050
-# reference design, which is the most common ESP32-S3 5" 800x480 layout.
+# Pin map and timings are the REAL ones, taken from Disttrack/PandaTouch_streamDeck
+# (docs/PINOUT.md and src/pt/pt_board.h) - working code on this exact board, not a guess.
 #
-# Read the result against the symptom table in INVESTIGATION.md - a test pattern makes a wrong
-# pin map obvious, where a dashboard would just look broken.
+# Flash this before the UI anyway. It is a five-minute check that the panel comes up, and a
+# wrong value is legible on colour bars where it would be baffling on a dashboard.
 #
 # BACK UP THE STOCK FIRMWARE FIRST:
-#   esptool read_flash 0x0 0x1000000 panda_stock_backup.bin
+#   esptool --port /dev/cu.usbserial-XXXX read_flash 0x0 0x1000000 panda_stock_backup.bin
 
 esphome:
   name: panda-touch
@@ -24,8 +22,7 @@ esp32:
     sdkconfig_options:
       CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240: y
       CONFIG_ESP32S3_DATA_CACHE_64KB: y
-      # The 800x480 RGB565 framebuffer is 768KB and lives in PSRAM; these let code and
-      # constants live there too, which the RGB panel driver needs headroom for.
+      # 800x480 RGB565 is a 768KB framebuffer and lives in PSRAM.
       CONFIG_SPIRAM_FETCH_INSTRUCTIONS: y
       CONFIG_SPIRAM_RODATA: y
 
@@ -35,6 +32,9 @@ psram:
 
 logger:
   level: DEBUG
+  # UART0 is wired to the CH340K that the USB-C port bridges to, so logs come back over the
+  # same cable used to flash.
+  hardware_uart: UART0
 
 api:
 ota:
@@ -46,12 +46,10 @@ wifi:
   ap:
     ssid: "Panda Touch Fallback"
 
-# Try this first if the screen stays dark - a wrong backlight pin looks identical to a wrong
-# panel pin map, and this one is cheap to rule out.
 output:
   - platform: ledc
-    pin: 2
-    frequency: 1220
+    pin: 21
+    frequency: 30000Hz     # PT_LCD_BL_FREQUENCY_HZ
     id: backlight_pwm
 
 light:
@@ -62,55 +60,57 @@ light:
     restore_mode: ALWAYS_ON
 
 display:
-  - platform: rpi_dpi_rgb
+  # mipi_rgb, NOT rpi_dpi_rgb: this panel runs in DE-only mode (PT_LCD_HSYNC_PIN and
+  # PT_LCD_VSYNC_PIN are both -1 - those lines are not routed on the FPC at all), and
+  # mipi_rgb is the platform where hsync_pin/vsync_pin are optional.
+  - platform: mipi_rgb
     id: main_display
     update_interval: 1s
     auto_clear_enabled: false
-    color_order: RGB
-    invert_colors: true
     dimensions:
       width: 800
       height: 480
-    de_pin: 40
-    hsync_pin: 39
-    vsync_pin: 41
-    pclk_pin: 42
-    # Deliberately conservative. The reference design runs 12.5MHz; start low and raise only
-    # once the image is stable, since too high shows as tearing rather than outright failure.
-    pclk_frequency: 10MHz
+    de_pin: 38
+    pclk_pin: 5
+    reset_pin: 46
+    pclk_frequency: 14.8MHz
     hsync_pulse_width: 4
-    hsync_front_porch: 8
-    hsync_back_porch: 8
+    hsync_back_porch: 16
+    hsync_front_porch: 16
     vsync_pulse_width: 4
-    vsync_front_porch: 8
-    vsync_back_porch: 8
+    vsync_back_porch: 32
+    vsync_front_porch: 32
+    # Listed least- to most-significant bit, matching R3..R7 / G2..G7 / B3..B7 in pt_board.h.
     data_pins:
-      red: [45, 48, 47, 21, 14]
-      green: [5, 6, 7, 15, 16, 4]
-      blue: [8, 3, 46, 9, 1]
+      red: [6, 7, 8, 9, 10]
+      green: [11, 12, 13, 14, 15, 16]
+      blue: [17, 18, 48, 47, 39]
     lambda: |-
-      // Corner markers prove geometry and orientation; colour bars prove the channel arrays are
-      // in the right order. If red and blue are swapped, the bars say so immediately.
+      // Colour bars prove the channel arrays are ordered correctly; corner markers prove
+      // geometry and orientation; the border proves the full extent is addressable.
       it.filled_rectangle(0,   0, 200, 480, Color(255, 0, 0));
       it.filled_rectangle(200, 0, 200, 480, Color(0, 255, 0));
       it.filled_rectangle(400, 0, 200, 480, Color(0, 0, 255));
       it.filled_rectangle(600, 0, 200, 480, Color(255, 255, 255));
-      it.filled_rectangle(0,        0, 40, 40, Color(255, 255, 0));   // top-left
-      it.filled_rectangle(760,      0, 40, 40, Color(0, 255, 255));   // top-right
-      it.filled_rectangle(0,      440, 40, 40, Color(255, 0, 255));   // bottom-left
-      it.filled_rectangle(760,    440, 40, 40, Color(0, 0, 0));       // bottom-right
-      it.rectangle(0, 0, 800, 480, Color(255, 255, 255));             // 1px border = full extent
+      it.filled_rectangle(0,     0, 40, 40, Color(255, 255, 0));   // top-left
+      it.filled_rectangle(760,   0, 40, 40, Color(0, 255, 255));   // top-right
+      it.filled_rectangle(0,   440, 40, 40, Color(255, 0, 255));   // bottom-left
+      it.filled_rectangle(760, 440, 40, 40, Color(0, 0, 0));       // bottom-right
+      it.rectangle(0, 0, 800, 480, Color(255, 255, 255));
 
-# Touch is commented out until the controller is confirmed. GT911 is the usual pairing with this
-# panel, but guessing a touch controller can hang the I2C bus and make display debugging harder,
-# so prove the display first.
-#
-# i2c:
-#   sda: 19
-#   scl: 20
-#   scan: true          # log the scan - it names the address, which identifies the controller
-#
+# I2C0 carries the GT911. Left enabled here because the addresses are known and a scan is
+# useful confirmation, but touch input itself is not wired up until the panel is proven.
+i2c:
+  - id: bus_touch
+    sda: 2
+    scl: 1
+    frequency: 100kHz
+    scan: true          # expect 0x5D (or 0x14) in the log = GT911 present
+
 # touchscreen:
 #   - platform: gt911
 #     id: my_touch
 #     display: main_display
+#     i2c_id: bus_touch
+#     interrupt_pin: 40
+#     reset_pin: 41
