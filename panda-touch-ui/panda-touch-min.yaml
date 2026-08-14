@@ -1,0 +1,216 @@
+# Bisect step 4: + wifi/api/time (connectivity only, still no HA sensors or intervals).
+# Step 3 (full UI) booted fine, so the fault is in the Home Assistant bindings.
+# Previously step 3: display + LVGL + touch + the REAL UI (theme, 2 pages, 9 bars,
+# buttons, montserrat fonts). Still no wifi/api/time/HA sensors.
+# Steps 1 and 2 booted fine, so this tests UI complexity specifically.
+# Step 1 (display+LVGL alone) booted fine, so this tests the touchscreen specifically -
+# the crash in the full config landed right after I2C bus recovery.
+#
+# The bring-up config (display, no LVGL) works. The full config crashes during setup. This
+# isolates whether display+LVGL alone is viable, with no touchscreen, no wifi, no api, and no
+# Home Assistant sensors to muddy the result. Serial logging only.
+
+esphome:
+  name: panda-touch
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240: y
+      CONFIG_ESP32S3_DATA_CACHE_64KB: y
+      CONFIG_SPIRAM_FETCH_INSTRUCTIONS: y
+      CONFIG_SPIRAM_RODATA: y
+      # Without this, WiFi and LWIP buffers allocate from internal RAM even though 8MB of
+      # PSRAM is present. Alongside LVGL's DMA-capable draw buffer that exhausts the ~327KB
+      # of internal RAM and setup() dies - which is exactly when the crash appeared.
+      CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP: y
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+logger:
+  level: DEBUG
+  hardware_uart: UART0
+
+safe_mode:
+  disabled: true
+
+i2c:
+  - id: bus_touch
+    sda: 2
+    scl: 1
+    frequency: 100kHz
+    # scan disabled: the 128-address probe is the prime suspect for the setup hang that
+    # only appears once wifi is in the build. The GT911 address is already known (0x5D).
+    scan: false
+
+touchscreen:
+  - platform: gt911
+    id: my_touch
+    display: main_display
+    i2c_id: bus_touch
+    # interrupt_pin deliberately omitted: attaching the GPIO40 ISR hangs setup once wifi is
+    # in the build. GT911 falls back to polling, which is marginally less responsive but
+    # avoids an ISR that can wedge when wifi disables the flash cache.
+    reset_pin: 41
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Panda Touch Fallback"
+
+
+output:
+  - platform: ledc
+    pin: 21
+    frequency: 30000Hz
+    id: backlight_pwm
+
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    name: Display Backlight
+    id: back_light
+    restore_mode: ALWAYS_ON
+
+display:
+  - platform: rpi_dpi_rgb
+    id: main_display
+    auto_clear_enabled: false
+    update_interval: never
+    dimensions: {width: 800, height: 480}
+    de_pin: 38
+    pclk_pin: 5
+    reset_pin: 46
+    hsync_pin: 42
+    vsync_pin: 45
+    pclk_frequency: 14.8MHz
+    color_order: RGB
+    hsync_pulse_width: 4
+    hsync_back_porch: 16
+    hsync_front_porch: 16
+    vsync_pulse_width: 4
+    vsync_back_porch: 32
+    vsync_front_porch: 32
+    data_pins:
+      red: [6, 7, 8, 9, 10]
+      green: [11, 12, 13, 14, 15, 16]
+      blue: [17, 18, 48, 47, 39]
+
+lvgl:
+  displays: [main_display]
+  touchscreens: [my_touch]
+  # The LVGL draw buffer must be DMA-capable internal RAM, of which there is only ~327KB
+  # total. At 25% (192KB) it fits alone but leaves too little for the WiFi stack, which is
+  # exactly where the crash appeared. 10% is ~77KB and leaves WiFi room to breathe.
+  buffer_size: 25%
+  theme:
+    obj:
+      bg_color: 0x101418
+      border_color: 0x1E2A33
+      text_color: 0xE8F1F8
+    button:
+      bg_color: 0x16212B
+      border_color: 0x00E5FF
+      border_width: 2
+      radius: 10
+      text_color: 0xE8F1F8
+
+  pages:
+    # ---- ambient dashboard -------------------------------------------------
+    - id: page_idle
+      bg_color: 0x101418
+      widgets:
+        - label:
+            id: clock_label
+            align: TOP_MID
+            y: 28
+            text_font: montserrat_48
+            text_color: 0x00E5FF
+            text: "--:--"
+        - label:
+            id: weather_label
+            align: TOP_MID
+            y: 96
+            text: "—"
+        - label:
+            id: temp_label
+            align: TOP_MID
+            y: 122
+            text_color: 0x8FA6B4
+            text: "—"
+        - label:
+            id: printer_label
+            align: TOP_LEFT
+            x: 24
+            y: 24
+            text_color: 0x8FA6B4
+            text: "P1S: —"
+        - bar:
+            id: print_bar
+            align: TOP_LEFT
+            x: 24
+            y: 48
+            width: 180
+            height: 8
+            min_value: 0
+            max_value: 100
+            value: 0
+        # Only entities that are safe by voice appear here. switch.desk_power feeds the GPU box
+        # that runs Ollama/Whisper/Piper, and the printer fans can ruin an in-progress print -
+        # both are hidden from Assist for the same reason, so neither gets a button.
+        - button:
+            id: btn_lab_fan
+            align: BOTTOM_LEFT
+            x: 40
+            y: -40
+            width: 200
+            height: 84
+            widgets:
+              - label: {align: CENTER, text: "Lab Fan"}
+        - button:
+            id: btn_lab_light
+            align: BOTTOM_MID
+            y: -40
+            width: 200
+            height: 84
+            widgets:
+              - label: {align: CENTER, text: "Lab Light"}
+        - button:
+            id: btn_desk_light
+            align: BOTTOM_RIGHT
+            x: -40
+            y: -40
+            width: 200
+            height: 84
+            widgets:
+              - label: {align: CENTER, text: "Desk Light"}
+
+    # ---- listening / thinking / speaking -----------------------------------
+    - id: page_active
+      bg_color: 0x0A0E12
+      widgets:
+        - label:
+            id: status_label
+            align: TOP_MID
+            y: 70
+            text_font: montserrat_28
+            text_color: 0x8FA6B4
+            text: ""
+        # Nine bars, centre-aligned so they grow symmetrically from the middle.
+        - bar: {id: wv0, align: CENTER, x: -224, width: 28, height: 260, min_value: 0, max_value: 100, value: 20}
+        - bar: {id: wv1, align: CENTER, x: -168, width: 28, height: 260, min_value: 0, max_value: 100, value: 40}
+        - bar: {id: wv2, align: CENTER, x: -112, width: 28, height: 260, min_value: 0, max_value: 100, value: 60}
+        - bar: {id: wv3, align: CENTER, x:  -56, width: 28, height: 260, min_value: 0, max_value: 100, value: 80}
+        - bar: {id: wv4, align: CENTER, x:    0, width: 28, height: 260, min_value: 0, max_value: 100, value: 95}
+        - bar: {id: wv5, align: CENTER, x:   56, width: 28, height: 260, min_value: 0, max_value: 100, value: 80}
+        - bar: {id: wv6, align: CENTER, x:  112, width: 28, height: 260, min_value: 0, max_value: 100, value: 60}
+        - bar: {id: wv7, align: CENTER, x:  168, width: 28, height: 260, min_value: 0, max_value: 100, value: 40}
+        - bar: {id: wv8, align: CENTER, x:  224, width: 28, height: 260, min_value: 0, max_value: 100, value: 20}
+

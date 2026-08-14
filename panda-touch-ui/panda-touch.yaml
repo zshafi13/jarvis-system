@@ -13,8 +13,7 @@ substitutions:
 esphome:
   name: panda-touch
   friendly_name: Panda Touch
-  on_boot:
-    - lvgl.page.show: page_idle
+  # No on_boot: it defaults to priority 600, which runs before LVGL exists.
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -27,6 +26,16 @@ esp32:
       CONFIG_ESP32S3_DATA_CACHE_64KB: y
       CONFIG_SPIRAM_FETCH_INSTRUCTIONS: y
       CONFIG_SPIRAM_RODATA: y
+      # Both mirror Disttrack/PandaTouch_streamDeck, which runs touch AND wifi on this exact
+      # board. ESP-IDF's default main task stack is 3584 bytes; that project raises its loop
+      # stack to 16KB. LVGL rendering plus wifi callbacks on a 3.5KB stack overflows and
+      # wedges with no panic - which matches the hang seen here exactly.
+      CONFIG_ESP_MAIN_TASK_STACK_SIZE: "16384"
+      # esptool reports the eFuse is set to quad, but ESPHome was driving the flash in DIO.
+      # QIO doubles flash bandwidth, which matters when the LCD DMA, PSRAM and wifi are all
+      # contending for the bus.
+      CONFIG_ESPTOOLPY_FLASHMODE_QIO: y
+      CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP: y
 
 psram:
   mode: octal
@@ -36,6 +45,12 @@ logger:
   level: INFO          # DEBUG floods the log once LVGL is running
   hardware_uart: UART0 # bridged to USB-C via the CH340K
 api:
+
+# Off until the UI is confirmed stable, so a crash shows a real panic instead of being
+# swallowed. Re-enable once it boots reliably.
+safe_mode:
+  disabled: true
+
 ota:
   - platform: esphome
 wifi:
@@ -98,7 +113,11 @@ i2c:
     sda: 2
     scl: 1
     frequency: 100kHz
-    scan: true
+    # Bounded so a stalled transaction cannot block setup forever. The hang seen with wifi
+    # present produced no panic and no watchdog reset, which means the task was blocked in a
+    # yielding call rather than spinning - i.e. waiting on I2C with no timeout.
+    timeout: 10ms
+    scan: false
 
 touchscreen:
   - platform: gt911
@@ -225,6 +244,7 @@ interval:
 
 lvgl:
   displays: [main_display]
+  buffer_size: 25%
   touchscreens: [my_touch]
   theme:
     obj:

@@ -186,3 +186,69 @@ Still useful if the panel misbehaves after flashing:
    16MB, a few minutes. Do it even though bricking is acceptable — it is the only route back to
    a printer controller, and the only artifact for any future disassembly.
 3. Only then flash `panda-touch-bringup.yaml`.
+
+
+## OPEN PROBLEM: I2C and wifi cannot coexist
+
+Everything works individually. The combination of **I2C + wifi** wedges during `setup()`.
+
+### What is proven working
+
+| Configuration | Result |
+|---|---|
+| display alone | colour bars correct on screen |
+| + LVGL | boots, PSRAM 8MB, 25% buffer |
+| + GT911 touch | boots, responds at 0x5D, interrupt attaches |
+| + full UI (2 pages, 9 bars, montserrat fonts) | boots |
+| + wifi, **without** I2C | boots, LVGL initialises, wifi starts |
+| + wifi, **with** I2C | **hangs** |
+
+So the pin map, the panel, LVGL, the touch controller and wifi are each fine. Only the pairing
+of I2C with wifi fails.
+
+### It is a deadlock, not a crash
+
+This took a while to establish and is the single most useful fact here:
+
+- **One boot per capture window, reset reason `POWERON`.** It is not a reboot loop.
+- **No panic, no backtrace, no brownout message.** Execution simply stops.
+- `sdkconfig` confirms `CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=y`, so a panic *would* print and
+  reboot, and `CONFIG_ESP_TASK_WDT_EN=y` with `CONFIG_ESP_TASK_WDT_PANIC=y`, so a spin *would*
+  trip the watchdog.
+
+Neither happens, which means the task is **blocked in a call that yields** - the idle task
+still runs and feeds the watchdog. That is a deadlock waiting on something that never
+completes, not memory exhaustion and not a stack overflow.
+
+### Fixes attempted, all unsuccessful
+
+Every one of these was applied and verified present in the generated `sdkconfig` or config:
+
+| Attempt | Rationale | Result |
+|---|---|---|
+| remove `on_boot: lvgl.page.show` | priority 600 runs before LVGL exists | **real bug, fixed** - but not this one |
+| `buffer_size: 25%` then `10%` | LVGL draw buffer starving internal RAM | no change |
+| `CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y` | move wifi/LWIP buffers out of internal RAM | got one boot further, then same |
+| `scan: false` | 128-address probe blocking | hang moved later, not cured |
+| drop `interrupt_pin` | ISR wedging when wifi disables flash cache | no change |
+| `CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384` | streamdeck firmware uses a 16KB loop stack | no change |
+| `CONFIG_ESPTOOLPY_FLASHMODE_QIO=y` | eFuse says quad; ESPHome was driving DIO | applied (`SPI Mode : QIO`), no change |
+| `timeout: 10ms` on the I2C bus | bound a stalled transaction | no change |
+
+The stack and flash-mode settings are kept regardless: QIO is correct for this eFuse, and main
+stack headroom is harmless.
+
+### Why it is worth another look
+
+[Disttrack/PandaTouch_streamDeck](https://github.com/Disttrack/PandaTouch_streamDeck) runs
+**touch and wifi together on this exact board**, so the hardware is not the limit. The
+difference is the stack: that project is Arduino + `TAMC_GT911` (a bit-banged/Wire-based
+driver), while this is ESP-IDF + ESPHome's `i2c.idf` component. The next thing to try is
+ESPHome's Arduino framework, or its `i2c` implementation other than the IDF one, rather than
+more sdkconfig tuning.
+
+### Current state
+
+`panda-touch.yaml` still contains touch. It does not boot with wifi. A display-only variant -
+drop `i2c:`, `touchscreen:`, `touchscreens:` and the three buttons - boots and is what the
+screen is actually for.
