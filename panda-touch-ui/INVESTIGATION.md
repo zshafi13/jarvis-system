@@ -252,3 +252,61 @@ more sdkconfig tuning.
 `panda-touch.yaml` still contains touch. It does not boot with wifi. A display-only variant -
 drop `i2c:`, `touchscreen:`, `touchscreens:` and the three buttons - boots and is what the
 screen is actually for.
+
+
+## Update: wifi never confirmed working, with or without touch
+
+An earlier note in this file described a display-only build as "boots and is what the screen is
+actually for". **That was overstated.** What was actually observed was the log reaching:
+
+```
+[I][app:060]: Running through setup()
+[D][lvgl:711]: Setting resolution to 800 x 480 (rotation 0)
+[C][wifi:645]: Starting...
+```
+
+That is wifi *beginning* to start. The device was never confirmed to associate, obtain an IP,
+appear on mDNS, or be discovered by Home Assistant. Later attempts with the same shape did not
+reach the network either - an ARP sweep of the /24 does not find its MAC (80:65:99:a0:c5:4c).
+
+So the honest position is: **nothing with wifi enabled has been confirmed working on this
+board**, touch or no touch. Everything without wifi works perfectly.
+
+### BTT's sdkconfig cannot be fully reproduced under ESPHome
+
+The vendor's [PandaTouch_IDF](https://github.com/bigtreetech/PandaTouch_IDF)
+`sdkconfig.defaults` runs **120MHz octal PSRAM** with 120MHz QIO flash. ESPHome supports that
+combination only behind `cpu_frequency: 240MHZ` plus
+`framework.advanced.enable_idf_experimental_features: true` - both were set - but the build
+then fails inside ESP-IDF itself:
+
+```
+static assertion failed: "FLASH and PSRAM Mode configuration are not supported"
+esp_hw_support/mspi_timing_tuning/... mspi_timing_tuning_configs.h:179-181: error
+```
+
+120MHz PSRAM fails against both 120MHz and 80MHz flash. BTT build against **ESP-IDF 5.3.1**;
+ESPHome 2026.6.5 ships **5.5.4**, whose mspi timing tables are stricter. This is a toolchain
+version gap, not a configuration mistake, and it cannot be closed from YAML.
+
+PSRAM bandwidth therefore remains the **untested** hypothesis, not a disproven one. An 800x480
+RGB panel streams its framebuffer out of PSRAM continuously, and 80MHz may simply not be enough
+once wifi contends for the same bus. BTT clearly thought 120MHz was necessary.
+
+The remaining BTT settings *were* applied and verified in the generated sdkconfig
+(`BOOTLOADER_FLASH_DC_AWARE`, `ESP32S3_DATA_CACHE_LINE_64B`, `FREERTOS_HZ=1000`,
+`ESP_WIFI_STATIC_RX_BUFFER_NUM=10`, `ESP_WIFI_RX_BA_WIN=6`, `ESP_TASK_WDT_TIMEOUT_S=10`,
+`ESP_MAIN_TASK_STACK_SIZE=16384`, QIO flash). They did not change the outcome.
+
+### Where to pick this up
+
+1. **Wait for / pin an ESPHome release on ESP-IDF 5.3.x**, then set 120MHz octal PSRAM as BTT
+   do. This is the single most promising untried option and needs no code.
+2. **Build on BTT's PandaTouch_IDF directly** rather than ESPHome, and talk to Home Assistant
+   over its REST or websocket API instead of the native API. Loses ESPHome's conveniences but
+   starts from a codebase already proven on this exact board.
+3. **Custom ESPHome external component** wrapping BTT's display/touch init, bypassing
+   `i2c.idf`. Most work, least certain.
+
+Everything below the wifi layer is solved and verified - pin map, panel timings, LVGL, GT911,
+flashing procedure, and a restorable stock backup. Only the wifi coexistence is open.

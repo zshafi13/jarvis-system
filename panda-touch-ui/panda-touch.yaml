@@ -19,26 +19,45 @@ esp32:
   board: esp32-s3-devkitc-1
   variant: esp32s3
   flash_size: 16MB
+  # Both required for 120MHz octal PSRAM - ESPHome gates it on exactly these two.
+  cpu_frequency: 240MHZ
   framework:
     type: esp-idf
+    advanced:
+      enable_idf_experimental_features: true
     sdkconfig_options:
-      CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240: y
-      CONFIG_ESP32S3_DATA_CACHE_64KB: y
+      # Taken from BIGTREETECH's own PandaTouch_IDF sdkconfig.defaults - the vendor's
+      # reference configuration for this exact board. The RGB panel streams its framebuffer
+      # out of PSRAM continuously; at 80MHz, with wifi also hitting PSRAM, the LCD DMA
+      # starves and stalls the bus, which is the silent deadlock seen here. BTT run PSRAM
+      # and flash at 120MHz, which needs DC_AWARE and the experimental-features flag.
+      CONFIG_BOOTLOADER_FLASH_DC_AWARE: y
+      CONFIG_ESPTOOLPY_FLASHMODE_QIO: y
+      # Flash stays at 80MHz. IDF 5.5.4 rejects 120MHz flash together with 120MHz octal
+      # PSRAM ("FLASH and PSRAM Mode configuration are not supported"); BTT built against
+      # 5.3.1 where the pairing was allowed. PSRAM bandwidth is what the RGB panel needs,
+      # so that is the one to keep at 120.
+      CONFIG_ESPTOOLPY_FLASHFREQ_80M: y
+      CONFIG_SPIRAM_MODE_OCT: y
       CONFIG_SPIRAM_FETCH_INSTRUCTIONS: y
       CONFIG_SPIRAM_RODATA: y
-      # Both mirror Disttrack/PandaTouch_streamDeck, which runs touch AND wifi on this exact
-      # board. ESP-IDF's default main task stack is 3584 bytes; that project raises its loop
-      # stack to 16KB. LVGL rendering plus wifi callbacks on a 3.5KB stack overflows and
-      # wedges with no panic - which matches the hang seen here exactly.
-      CONFIG_ESP_MAIN_TASK_STACK_SIZE: "16384"
-      # esptool reports the eFuse is set to quad, but ESPHome was driving the flash in DIO.
-      # QIO doubles flash bandwidth, which matters when the LCD DMA, PSRAM and wifi are all
-      # contending for the bus.
-      CONFIG_ESPTOOLPY_FLASHMODE_QIO: y
       CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP: y
+      CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240: y
+      CONFIG_ESP32S3_DATA_CACHE_LINE_64B: y
+      CONFIG_COMPILER_OPTIMIZATION_PERF: y
+      # 1000Hz tick and a longer watchdog: BTT's values, and finer scheduling granularity
+      # matters when the LCD, wifi and I2C all want the bus.
+      CONFIG_FREERTOS_HZ: "1000"
+      CONFIG_ESP_TASK_WDT_TIMEOUT_S: "10"
+      CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM: "10"
+      CONFIG_ESP_WIFI_RX_BA_WIN: "6"
+      CONFIG_ESP_MAIN_TASK_STACK_SIZE: "16384"
 
 psram:
   mode: octal
+  # 80MHz. BTT run 120MHz, but ESPHome ships ESP-IDF 5.5.4 whose mspi_timing_tuning tables
+  # reject 120MHz PSRAM with either 80MHz or 120MHz flash on this part - BTT build against
+  # 5.3.1 where the pairing was allowed. Not configurable around from here.
   speed: 80MHz
 
 logger:
@@ -107,25 +126,6 @@ display:
       red: [6, 7, 8, 9, 10]
       green: [11, 12, 13, 14, 15, 16]
       blue: [17, 18, 48, 47, 39]
-
-i2c:
-  - id: bus_touch
-    sda: 2
-    scl: 1
-    frequency: 100kHz
-    # Bounded so a stalled transaction cannot block setup forever. The hang seen with wifi
-    # present produced no panic and no watchdog reset, which means the task was blocked in a
-    # yielding call rather than spinning - i.e. waiting on I2C with no timeout.
-    timeout: 10ms
-    scan: false
-
-touchscreen:
-  - platform: gt911
-    id: my_touch
-    display: main_display
-    i2c_id: bus_touch
-    interrupt_pin: 40
-    reset_pin: 41
 
 # ---------------------------------------------------------------- state from Home Assistant
 
@@ -245,7 +245,6 @@ interval:
 lvgl:
   displays: [main_display]
   buffer_size: 25%
-  touchscreens: [my_touch]
   theme:
     obj:
       bg_color: 0x101418
@@ -301,45 +300,6 @@ lvgl:
         # Only entities that are safe by voice appear here. switch.desk_power feeds the GPU box
         # that runs Ollama/Whisper/Piper, and the printer fans can ruin an in-progress print -
         # both are hidden from Assist for the same reason, so neither gets a button.
-        - button:
-            id: btn_lab_fan
-            align: BOTTOM_LEFT
-            x: 40
-            y: -40
-            width: 200
-            height: 84
-            widgets:
-              - label: {align: CENTER, text: "Lab Fan"}
-            on_click:
-              - homeassistant.action:
-                  action: fan.toggle
-                  data: {entity_id: fan.lab_fan}
-        - button:
-            id: btn_lab_light
-            align: BOTTOM_MID
-            y: -40
-            width: 200
-            height: 84
-            widgets:
-              - label: {align: CENTER, text: "Lab Light"}
-            on_click:
-              - homeassistant.action:
-                  action: light.toggle
-                  data: {entity_id: light.lab_ceiling_light}
-        - button:
-            id: btn_desk_light
-            align: BOTTOM_RIGHT
-            x: -40
-            y: -40
-            width: 200
-            height: 84
-            widgets:
-              - label: {align: CENTER, text: "Desk Light"}
-            on_click:
-              - homeassistant.action:
-                  action: light.toggle
-                  data: {entity_id: light.desk}
-
     # ---- listening / thinking / speaking -----------------------------------
     - id: page_active
       bg_color: 0x0A0E12
