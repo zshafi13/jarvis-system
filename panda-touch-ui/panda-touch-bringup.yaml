@@ -36,15 +36,9 @@ logger:
   # same cable used to flash.
   hardware_uart: UART0
 
-api:
-ota:
-  - platform: esphome
-
-wifi:
-  ssid: !secret wifi_ssid
-  password: !secret wifi_password
-  ap:
-    ssid: "Panda Touch Fallback"
+# Deliberately no wifi/api/ota. This is a bench test of the panel over the serial cable, and
+# leaving them out means it needs no credentials and cannot fail for network reasons - if the
+# screen stays dark, the panel config is the only thing it can be.
 
 output:
   - platform: ledc
@@ -60,10 +54,11 @@ light:
     restore_mode: ALWAYS_ON
 
 display:
-  # mipi_rgb, NOT rpi_dpi_rgb: this panel runs in DE-only mode (PT_LCD_HSYNC_PIN and
-  # PT_LCD_VSYNC_PIN are both -1 - those lines are not routed on the FPC at all), and
-  # mipi_rgb is the platform where hsync_pin/vsync_pin are optional.
-  - platform: mipi_rgb
+  # rpi_dpi_rgb, not mipi_rgb: mipi_rgb is for panels whose controller is configured over
+  # SPI (it registers as an SPIDevice and demands an init_sequence). This panel has no SPI
+  # lines at all - it is a raw RGB parallel bus. Pins and timings from
+  # Disttrack/PandaTouch_streamDeck src/pt/pt_board.h.
+  - platform: rpi_dpi_rgb
     id: main_display
     update_interval: 1s
     auto_clear_enabled: false
@@ -73,7 +68,15 @@ display:
     de_pin: 38
     pclk_pin: 5
     reset_pin: 46
+    # This panel is DE-only: HSYNC and VSYNC are not routed on the FPC (pt_board.h has both
+    # as -1). ESPHome requires the options anyway, and the ESP32-S3 LCD peripheral generates
+    # the signals regardless, so they are pointed at the only free GPIOs on the board and
+    # drive nothing. GPIO45 is a strapping pin (VDD_SPI) but is safe as a post-boot output -
+    # the board already uses GPIO46, also strapping, for LCD reset.
+    hsync_pin: 42
+    vsync_pin: 45
     pclk_frequency: 14.8MHz
+    color_order: RGB
     hsync_pulse_width: 4
     hsync_back_porch: 16
     hsync_front_porch: 16

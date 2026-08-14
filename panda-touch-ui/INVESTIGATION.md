@@ -86,6 +86,80 @@ For the record, the guess this replaced was the Sunton ESP32-8048S050 reference 
 (de 40, hsync 39, vsync 41, pclk 42, backlight 2). It is wrong in every single value. Worth
 remembering before trusting a "same class of board" assumption again.
 
+## VERIFIED ON HARDWARE
+
+The bring-up config was flashed and the panel came up correctly on the first attempt: four
+colour bars in the right order, corner markers, and the full-extent border. Colours, geometry
+and bit ordering all confirmed. The pin map above is therefore **verified, not inferred**.
+
+Boot log confirms:
+
+```
+ESP-IDF 5.5.4 · chip revision v0.2 · SPI Flash 16MB
+I2C bus scan: Found device at address 0x5D      <- GT911, exactly as documented
+RPI_DPI_RGB LCD: Height 480, DE GPIO38, Reset GPIO46, 16 data pins bound
+PSRAM: Available YES
+setup() finished successfully
+```
+
+Two things worth knowing:
+
+- **`rpi_dpi_rgb`, not `mipi_rgb`.** `mipi_rgb` looked right because its sync pins are optional,
+  but it registers as an SPIDevice and requires `model` + `init_sequence` - it is for panels
+  whose controller is configured over SPI. This panel is a raw RGB parallel bus with no SPI
+  lines, so `rpi_dpi_rgb` is correct despite needing the sync-pin workaround below.
+- **HSYNC/VSYNC are pointed at GPIO42 and GPIO45**, which go nowhere. `rpi_dpi_rgb` requires
+  both, the ESP32-S3 LCD peripheral generates them regardless, and they are not routed on this
+  board's FPC. Those are the only two usable free GPIOs: everything else is taken by the
+  display bus, both I2C buses, UART0, native USB, SPI flash, or the octal PSRAM (GPIO33-37).
+  GPIO45 is a strapping pin (VDD_SPI) but is fine as a post-boot output - the board already
+  does the same with GPIO46 for LCD reset.
+
+The test pattern visibly repaints once a second. That is `update_interval: 1s` redrawing the
+whole frame into a single buffer, not a fault; the LVGL config uses `update_interval: never`.
+
+## Flashing — confirmed working
+
+The chip, read over COM3 on the Windows box:
+
+```
+Chip type:  ESP32-S3 (QFN56) revision v0.2
+Features:   Wi-Fi, BT 5 (LE), Dual Core + LP Core, 240MHz, Embedded PSRAM 8MB
+Crystal:    40MHz            MAC: 80:65:99:a0:c5:4c
+Flash:      16MB (GigaDevice c8/4018), quad @3.3V
+```
+
+DTR/RTS auto-reset works — no button press needed to enter the bootloader.
+
+**Use 460800 baud or lower.** This CH340K reliably handles 115200 / 230400 / 460800 and fails
+every time at 921600. A whole 16MB backup failed 32/32 chunks purely because of this; the
+tell was that the failure was total rather than scattered.
+
+Separately, something on that machine opens COM3 periodically — roughly 5 attempts in 20 over
+40s fail with "Access is denied" even though the device stays enumerated throughout. Never
+identified (an SSH session cannot see the interactive desktop's processes). Retrying is enough
+to work around it; a slicer scanning serial ports for printers is the likely culprit.
+
+## Stock firmware backup
+
+`panda_stock_backup.bin`, 16,777,216 bytes, SHA256 `0E82D282770D695EF3C8223785F0CD65C390E93317665B00311F814555E25F63`.
+Read in 1MB chunks at 460800 and reassembled. Verified to be genuine rather than an empty read:
+
+```
+bootloader @0x0   magic 0xE9, chip_id 9 (ESP32-S3)
+partition table   nvs 20KB | otadata 8KB | app0 4608KB @0x010000
+                  app1 4608KB @0x490000 | spiffs 7040KB @0x910000 | coredump 64KB
+app0              valid 0xE9 image
+strings           Panda x30, BIGTREETECH x1, Bambu x8, lvgl x1
+60.2% of the first 4MB is non-blank
+```
+
+The large spiffs partition is where the per-language `.img` assets live. Restore with:
+
+```
+esptool --port COM3 --baud 460800 write-flash 0x0 panda_stock_backup.bin
+```
+
 ## Still unknown
 
 - Whether BTT's Recovery Tool can restore stock firmware after an overwrite.
