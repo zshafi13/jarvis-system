@@ -18,6 +18,33 @@ tool_map = {
     "search_web": tools[2].func
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Handle unclassified, casual, or chatty messages
 def run_freeform_response(text: str) -> str:
     context = agent_state.get_context()
