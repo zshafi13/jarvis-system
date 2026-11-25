@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#1f2220" />
+<title>JayZee Coffee Co</title>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Patrick+Hand&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="frame">
+  <div class="board">
+    <span class="deco sparkle" style="top:18px;left:22px">✦</span>
+    <span class="deco sparkle" style="top:60px;right:30px">✧</span>
+    <span class="deco sparkle" style="top:40%;left:8px">✧</span>
+
+    <header>
+      <h1 class="logo">JayZee</h1>
+      <div class="sub">Coffee Co</div>
+      <hr class="rule" />
+    </header>
+
+    <main>
+      <div class="section-title"><span>Season Favorites</span></div>
+      <div class="options" id="favorites"></div>
+
+      <div class="section-title"><span>Drinks</span></div>
+      <div class="options" id="drinks"></div>
+
+      <div class="section-title"><span>Flavors</span></div>
+      <div class="options" id="flavors"></div>
+
+      <div class="section-title"><span>Hot or Iced</span></div>
+      <div class="row" id="temps"></div>
+
+      <label class="small" for="name">Name for the order</label>
+      <input type="text" id="name" placeholder="Who's it for?" autocomplete="off" maxlength="40" />
+      <label class="small" for="notes">Notes (optional)</label>
+      <textarea id="notes" placeholder="extra shot, oat milk, less sweet..." maxlength="200"></textarea>
+
+      <div class="summary" id="summary"><span class="muted">Pick a drink ☕</span></div>
+      <button class="cta" id="place" disabled>Place Order</button>
+      <div class="offline hidden" id="offline">Can't reach the coffee shop. Is the server running?</div>
+
+      <div id="mine-wrap" class="hidden">
+        <div class="section-title"><span>My Orders</span></div>
+        <div class="orders" id="mine"></div>
+      </div>
+    </main>
+
+    <svg class="deco cat" viewBox="0 0 120 60" fill="none" stroke="#f1ead8" stroke-width="2" stroke-linecap="round">
+      <path d="M10 55 Q10 25 45 22 Q85 18 105 40 Q115 52 100 55 Z" fill="#141614"/>
+      <path d="M22 30 L18 14 L32 24"/><path d="M40 23 L44 9 L50 24"/>
+      <path d="M26 36 q4 3 8 0"/><path d="M40 36 q4 3 8 0"/>
+      <path d="M100 55 Q118 50 112 38"/>
+    </svg>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const DRINKS = [
+  { id: "latte",      name: "Latte",      icon: "☕", note: "milk + espresso" },
+  { id: "americano",  name: "Americano",  icon: "🥛", note: "half milk half water" },
+  { id: "espresso",   name: "Espresso",   icon: "⚡", note: "ur a psycho" },
+  { id: "cappuccino", name: "Cappuccino", icon: "☁️", note: "" },
+];
+const FLAVORS = [
+  { id: "none",        name: "No Flavor",             icon: "○" },
+  { id: "brown-sugar", name: "Brown Sugar",           icon: "🧊" },
+  { id: "sweet-cream", name: "Sweet Cream / Vanilla", icon: "✿" },
+];
+const FAVORITES = [
+  { id: "fav-sc", name: "Hot Sweet Cream Latte", icon: "🍂", drink: "latte", flavor: "sweet-cream", temp: "Hot" },
+  { id: "fav-bs", name: "Hot Brown Sugar Latte", icon: "🍁", drink: "latte", flavor: "brown-sugar", temp: "Hot" },
+];
+const TEMPS = ["Hot", "Iced"];
+const MINE = "jayzee-my-orders";   // ids of orders placed from this device
+const NAME = "jayzee-name";        // remember who's ordering on this phone
+
+const state = { drink: null, flavor: "none", temp: "Hot" };
+const $ = (id) => document.getElementById(id);
+const myIds = () => JSON.parse(localStorage.getItem(MINE) || "[]");
+let knownReady = new Set();
+
+function optButton({ icon, name, note }, selected, onClick) {
+  const b = document.createElement("button");
+  b.className = "opt" + (selected ? " selected" : "");
+  b.innerHTML = `<span class="icon">${icon}</span><span>${name}</span>` +
+    (note ? `<span class="note">(${note})</span>` : "");
+  b.onclick = onClick;
+  return b;
+}
+
+const isFavorite = (f) => state.drink === f.drink && state.flavor === f.flavor && state.temp === f.temp;
+
+function describe() {
+  if (!state.drink) return null;
+  const fav = FAVORITES.find(isFavorite);
+  if (fav) return fav.name;
+  const drink = DRINKS.find(d => d.id === state.drink).name;
+  const flavor = FLAVORS.find(f => f.id === state.flavor);
+  return [state.temp, flavor.id === "none" ? "" : flavor.name, drink].filter(Boolean).join(" ");
+}
+
+function render() {
+  $("favorites").replaceChildren(...FAVORITES.map(f =>
+    optButton(f, isFavorite(f), () => { Object.assign(state, { drink: f.drink, flavor: f.flavor, temp: f.temp }); render(); })));
+  $("drinks").replaceChildren(...DRINKS.map(d =>
+    optButton(d, state.drink === d.id, () => { state.drink = d.id; render(); })));
+  $("flavors").replaceChildren(...FLAVORS.map(f =>
+    optButton(f, state.flavor === f.id, () => { state.flavor = f.id; render(); })));
+  $("temps").replaceChildren(...TEMPS.map(t => {
+    const b = document.createElement("button");
+    b.className = "pill" + (state.temp === t ? " selected" : "");
+    b.textContent = (t === "Hot" ? "🔥 " : "🧊 ") + t;
+    b.onclick = () => { state.temp = t; render(); };
+    return b;
+  }));
+
+  const desc = describe();
+  const name = $("name").value.trim();
+  $("summary").innerHTML = desc
+    ? `${desc}${name ? ` <span class="muted">for</span> ${escapeHtml(name)}` : ""}`
+    : `<span class="muted">Pick a drink ☕</span>`;
+  $("place").disabled = !desc || !name;
+  $("place").textContent = !desc ? "Pick a drink" : !name ? "Add a name" : "Place Order";
+}
+
+async function refreshMine() {
+  const ids = myIds();
+  if (!ids.length) return $("mine-wrap").classList.add("hidden");
+  let all;
+  try {
+    all = await (await fetch("/api/orders", { cache: "no-store" })).json();
+    $("offline").classList.add("hidden");
+  } catch { $("offline").classList.remove("hidden"); return; }
+
+  const mine = all.filter(o => ids.includes(o.id));
+  // forget orders the barista has cleared
+  localStorage.setItem(MINE, JSON.stringify(mine.map(o => o.id)));
+  $("mine-wrap").classList.toggle("hidden", !mine.length);
+
+  mine.forEach(o => {
+    if (o.done && !knownReady.has(o.id)) {
+      if (knownReady.size || document.visibilityState === "visible") toast(`☕ #${o.num} ${o.desc} is ready!`);
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+    }
+  });
+  knownReady = new Set(mine.filter(o => o.done).map(o => o.id));
+
+  $("mine").replaceChildren(...mine.sort((a, b) => b.time - a.time).map(o => {
+    const el = document.createElement("div");
+    el.className = "order";
+    el.innerHTML = `
+      <div class="who">#${o.num} · ${escapeHtml(o.name)}</div>
+      <div class="what">${escapeHtml(o.desc)}${o.notes ? ` — <i>${escapeHtml(o.notes)}</i>` : ""}</div>
+      <div class="actions"><span class="status ${o.done ? "ready" : ""}">${o.done ? "Ready ✓" : "Brewing…"}</span></div>`;
+    return el;
+  }));
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => t.classList.remove("show"), 3000);
+}
+
+$("place").onclick = async () => {
+  $("place").disabled = true;
+  const name = $("name").value.trim();
+  try {
+    const res = await fetch("/api/orders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, desc: describe(), notes: $("notes").value.trim() }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const order = await res.json();
+    localStorage.setItem(MINE, JSON.stringify([...myIds(), order.id]));
+    localStorage.setItem(NAME, name);
+    toast(`Order #${order.num} placed for ${order.name} ☕`);
+    Object.assign(state, { drink: null, flavor: "none", temp: "Hot" });
+    $("notes").value = "";
+    $("offline").classList.add("hidden");
+    refreshMine();
+  } catch {
+    $("offline").classList.remove("hidden");
+  }
+  render();
+};
+
+$("name").value = localStorage.getItem(NAME) || "";
+$("name").addEventListener("input", render);
+render();
+refreshMine();
+setInterval(refreshMine, 4000);
+</script>
+</body>
+</html>

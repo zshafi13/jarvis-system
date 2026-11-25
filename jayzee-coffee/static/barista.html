@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#1f2220" />
+<title>Barista · JayZee Coffee Co</title>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Patrick+Hand&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="frame wide">
+  <div class="board">
+    <header>
+      <h1 class="logo">JayZee</h1>
+      <div class="sub">Barista Station</div>
+      <hr class="rule" />
+      <div class="tabs">
+        <button class="tab" id="sound">🔕 Sound off</button>
+      </div>
+      <div class="counter" id="counter"></div>
+      <div class="offline hidden" id="offline">Lost connection to the server, retrying…</div>
+    </header>
+
+    <div class="section-title"><span>To Make</span></div>
+    <div class="orders big" id="open"></div>
+
+    <div class="section-title"><span>Finished</span></div>
+    <div class="orders done-list" id="done"></div>
+    <div class="toolbar"><button class="mini" id="clear-done">Clear finished</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let seen = null;          // order ids we've already shown
+let soundOn = localStorage.getItem("jayzee-sound") === "1";
+let audio;
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => t.classList.remove("show"), 3000);
+}
+function ago(ms) {
+  const m = Math.floor((Date.now() - ms) / 60000);
+  return m < 1 ? "just now" : m === 1 ? "1 min ago" : `${m} min ago`;
+}
+
+function chime() {
+  if (!soundOn) return;
+  audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+  [880, 1318.5].forEach((f, i) => {
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = "sine"; o.frequency.value = f;
+    const t = audio.currentTime + i * 0.18;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.3, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+    o.connect(g).connect(audio.destination);
+    o.start(t); o.stop(t + 0.55);
+  });
+}
+
+function renderSound() { $("sound").textContent = soundOn ? "🔔 Sound on" : "🔕 Sound off"; }
+$("sound").onclick = () => {
+  soundOn = !soundOn;
+  localStorage.setItem("jayzee-sound", soundOn ? "1" : "0");
+  renderSound();
+  chime();  // a click also unlocks audio in the browser
+};
+
+async function api(method, path, body) {
+  const res = await fetch(path, {
+    method, cache: "no-store",
+    headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw new Error(res.status);
+  return res.json();
+}
+
+function card(o, fresh) {
+  const el = document.createElement("div");
+  el.className = "order" + (o.done ? " done" : "") + (fresh ? " fresh" : "");
+  el.innerHTML = `
+    <div class="who">#${o.num} · ${escapeHtml(o.name)}</div>
+    <div class="what">${escapeHtml(o.desc)}${o.notes ? ` — <i>${escapeHtml(o.notes)}</i>` : ""}</div>
+    <div class="when">${ago(o.time)}</div>
+    <div class="actions"></div>`;
+  const actions = el.querySelector(".actions");
+  const toggle = document.createElement("button");
+  toggle.className = "mini" + (o.done ? "" : " go");
+  toggle.textContent = o.done ? "Undo" : "Done ✓";
+  toggle.onclick = async () => {
+    await api("PATCH", `/api/orders/${o.id}`, { done: !o.done });
+    if (!o.done) toast(`#${o.num} for ${o.name} is ready ☕`);
+    refresh();
+  };
+  actions.append(toggle);
+  if (!o.done) {
+    const del = document.createElement("button");
+    del.className = "mini";
+    del.textContent = "Cancel";
+    del.onclick = async () => {
+      if (!confirm(`Cancel #${o.num} for ${o.name}?`)) return;
+      await api("DELETE", `/api/orders/${o.id}`);
+      refresh();
+    };
+    actions.append(del);
+  }
+  return el;
+}
+
+async function refresh() {
+  let orders;
+  try {
+    orders = await api("GET", "/api/orders");
+    $("offline").classList.add("hidden");
+  } catch { $("offline").classList.remove("hidden"); return; }
+
+  const open = orders.filter(o => !o.done).sort((a, b) => a.time - b.time);
+  const done = orders.filter(o => o.done).sort((a, b) => (b.doneTime || 0) - (a.doneTime || 0));
+  const newOnes = seen ? open.filter(o => !seen.has(o.id)) : [];
+  if (newOnes.length) {
+    chime();
+    toast(`New order: ${newOnes.map(o => o.name).join(", ")}`);
+  }
+  seen = new Set(orders.map(o => o.id));
+
+  $("counter").textContent = open.length
+    ? `${open.length} drink${open.length > 1 ? "s" : ""} to make`
+    : "All caught up ~ the cat is napping";
+  document.title = (open.length ? `(${open.length}) ` : "") + "Barista · JayZee Coffee Co";
+
+  $("open").replaceChildren(...(open.length
+    ? open.map(o => card(o, newOnes.includes(o)))
+    : [Object.assign(document.createElement("div"), { className: "empty", textContent: "No orders waiting" })]));
+  $("done").replaceChildren(...done.slice(0, 12).map(o => card(o)));
+}
+
+$("clear-done").onclick = async () => { await api("POST", "/api/orders/clear-done"); refresh(); };
+
+renderSound();
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>
